@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "exercises_system_name_idx" ON "exercises" USING btree ("name") WHERE "exercises"."user_id" is null;
