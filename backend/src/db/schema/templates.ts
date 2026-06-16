@@ -6,6 +6,7 @@ import {
   numeric,
   boolean,
   timestamp,
+  json,
 } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { exercises } from './exercises';
@@ -39,6 +40,8 @@ export const templateExercises = pgTable('template_exercises', {
   warmupEnabled: boolean('warmup_enabled').notNull().default(false),
   warmupSetCount: integer('warmup_set_count'),
   warmupPercentages: numeric('warmup_percentages', { precision: 5, scale: 2 }).array(),
+  warmupRepsPerSet: integer('warmup_reps_per_set').array(),
+  setsConfig: json('sets_config').$type<Array<{ loadKg: number | null; reps: number | null }>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

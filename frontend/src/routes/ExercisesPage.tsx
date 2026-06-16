@@ -1,28 +1,32 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { ExerciseCategory } from '@glob/shared';
+import type { ExerciseCategory, WeightUnit } from '@glob/shared';
 import {
   EXERCISE_CATEGORIES,
   useCreateExercise,
   useDeleteExercise,
   useExercises,
+  useUpdateExercise,
 } from '../api/exercises';
 import { ApiError } from '../api/client';
+import { SwipeToDelete } from '../components/SwipeToDelete';
 
 export function ExercisesPage() {
   const { data: exercises, isLoading } = useExercises();
   const createExercise = useCreateExercise();
+  const updateExercise = useUpdateExercise();
   const deleteExercise = useDeleteExercise();
 
   const [name, setName] = useState('');
   const [category, setCategory] = useState<ExerciseCategory>('accessory');
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>('kg');
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await createExercise.mutateAsync({ name, category });
+      await createExercise.mutateAsync({ name, category, weightUnit });
       setName('');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create exercise');
@@ -35,6 +39,15 @@ export function ExercisesPage() {
       await deleteExercise.mutateAsync(id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete exercise');
+    }
+  }
+
+  async function handleToggleUnit(id: string, current: WeightUnit) {
+    const next: WeightUnit = current === 'kg' ? 'lb' : 'kg';
+    try {
+      await updateExercise.mutateAsync({ id, weightUnit: next });
+    } catch {
+      // ignore — UI will revert via query invalidation
     }
   }
 
@@ -70,6 +83,16 @@ export function ExercisesPage() {
             ))}
           </select>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-400">Weight unit:</span>
+          <button
+            type="button"
+            onClick={() => setWeightUnit((u) => (u === 'kg' ? 'lb' : 'kg'))}
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1 text-sm text-slate-200"
+          >
+            {weightUnit}
+          </button>
+        </div>
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           type="submit"
@@ -93,18 +116,31 @@ export function ExercisesPage() {
               </h2>
               <ul className="space-y-1">
                 {items.map((ex) => (
-                  <li
-                    key={ex.id}
-                    className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900 px-3 py-2"
-                  >
-                    <span>{ex.name}</span>
-                    {!ex.isSystem && (
-                      <button
-                        onClick={() => handleDelete(ex.id)}
-                        className="text-sm text-red-400"
-                      >
-                        Delete
-                      </button>
+                  <li key={ex.id} className="overflow-hidden rounded-md border border-slate-800">
+                    {ex.isSystem ? (
+                      <div className="flex items-center justify-between bg-slate-900 px-3 py-2">
+                        <span>{ex.name}</span>
+                        <button
+                          onClick={() => handleToggleUnit(ex.id, ex.weightUnit)}
+                          disabled={updateExercise.isPending}
+                          className="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300 disabled:opacity-50"
+                        >
+                          {ex.weightUnit}
+                        </button>
+                      </div>
+                    ) : (
+                      <SwipeToDelete onDelete={() => handleDelete(ex.id)}>
+                        <div className="flex items-center justify-between bg-slate-900 px-3 py-2">
+                          <span>{ex.name}</span>
+                          <button
+                            onClick={() => handleToggleUnit(ex.id, ex.weightUnit)}
+                            disabled={updateExercise.isPending}
+                            className="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300 disabled:opacity-50"
+                          >
+                            {ex.weightUnit}
+                          </button>
+                        </div>
+                      </SwipeToDelete>
                     )}
                   </li>
                 ))}

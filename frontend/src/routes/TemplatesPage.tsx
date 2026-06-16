@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useDeleteTemplate, useTemplates } from '../api/templates';
+import { SwipeToDelete } from '../components/SwipeToDelete';
 
 export function TemplatesPage() {
   const { data: templates, isLoading } = useTemplates();
@@ -34,26 +35,23 @@ export function TemplatesPage() {
 
       <ul className="space-y-2">
         {templates?.map((template) => (
-          <li
-            key={template.id}
-            className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900 px-3 py-3"
-          >
-            <Link to={`/templates/${template.id}/edit`} className="flex-1">
-              <p className="font-medium">{template.name}</p>
-              <p className="text-sm text-slate-400">
-                {template.exerciseCount} exercise{template.exerciseCount === 1 ? '' : 's'}
-              </p>
-            </Link>
-            <button
-              onClick={() => {
+          <li key={template.id} className="overflow-hidden rounded-md border border-slate-800">
+            <SwipeToDelete
+              onDelete={() => {
                 if (confirm(`Delete "${template.name}"?`)) {
                   deleteTemplate.mutate(template.id);
                 }
               }}
-              className="text-sm text-red-400"
             >
-              Delete
-            </button>
+              <div className="flex items-center bg-slate-900 px-3 py-3">
+                <Link to={`/templates/${template.id}/edit`} className="flex-1">
+                  <p className="font-medium">{template.name}</p>
+                  <p className="text-sm text-slate-400">
+                    {template.exerciseCount} exercise{template.exerciseCount === 1 ? '' : 's'}
+                  </p>
+                </Link>
+              </div>
+            </SwipeToDelete>
           </li>
         ))}
       </ul>

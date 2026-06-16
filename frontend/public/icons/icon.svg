@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#0f172a"/>
+
+  <!-- Blob body -->
+  <path d="M 256 95
+    C 318 82, 405 128, 422 208
+    C 439 288, 412 372, 350 410
+    C 292 448, 196 442, 144 398
+    C 92 354, 85 268, 107 200
+    C 129 132, 200 108, 256 95 Z"
+    fill="#9333ea"/>
+
+  <!-- Subtle highlight to give it a bit of depth -->
+  <path d="M 230 118
+    C 270 106, 340 130, 360 175
+    C 368 193, 350 205, 330 190
+    C 310 175, 275 155, 240 150
+    C 218 145, 205 135, 230 118 Z"
+    fill="#a855f7" opacity="0.5"/>
+
+  <!-- Left eye (white) -->
+  <ellipse cx="204" cy="248" rx="27" ry="31" fill="white"/>
+  <!-- Right eye (white) -->
+  <ellipse cx="308" cy="248" rx="27" ry="31" fill="white"/>
+
+  <!-- Left pupil -->
+  <ellipse cx="211" cy="255" rx="14" ry="17" fill="#1e1b4b"/>
+  <!-- Right pupil -->
+  <ellipse cx="315" cy="255" rx="14" ry="17" fill="#1e1b4b"/>
+
+  <!-- Left eye shine -->
+  <ellipse cx="204" cy="244" rx="6" ry="7" fill="white" opacity="0.6"/>
+  <!-- Right eye shine -->
+  <ellipse cx="308" cy="244" rx="6" ry="7" fill="white" opacity="0.6"/>
+
+  <!-- Mouth -->
+  <path d="M 220 312 Q 256 338 292 312"
+    stroke="#1e1b4b" stroke-width="8" fill="none" stroke-linecap="round"/>
+</svg>

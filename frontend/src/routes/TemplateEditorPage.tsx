@@ -7,16 +7,23 @@ import {
   useUpdateTemplate,
   type TemplateExerciseInput,
 } from '../api/templates';
+import { useStartSession } from '../api/sessions';
 import { ApiError } from '../api/client';
 import { displayToKg, kgToDisplay, roundForDisplay } from '@glob/shared';
 import { ExercisePicker } from '../components/ExercisePicker';
-import { NumberStepper } from '../components/NumberStepper';
 import { WarmupConfigEditor } from '../components/WarmupConfigEditor';
-import { useWeightUnit } from '../hooks/useWeightUnit';
+import { SwipeToDelete } from '../components/SwipeToDelete';
 
-interface ExerciseRow extends TemplateExerciseInput {
+interface SetDef {
+  loadKg: number | null;
+  reps: number | null;
+}
+
+interface ExerciseRow extends Omit<TemplateExerciseInput, 'targetSets' | 'targetReps' | 'targetLoadKg' | 'setsConfig'> {
   key: string;
   exerciseName: string;
+  exerciseWeightUnit: 'kg' | 'lb';
+  sets: SetDef[];
 }
 
 function emptyRow(orderIndex: number): ExerciseRow {
@@ -24,17 +31,25 @@ function emptyRow(orderIndex: number): ExerciseRow {
     key: crypto.randomUUID(),
     exerciseId: '',
     exerciseName: '',
+    exerciseWeightUnit: 'kg',
     orderIndex,
-    targetSets: 3,
-    targetReps: 5,
-    targetLoadKg: null,
     targetLoadPct: null,
     referenceLiftId: null,
     notes: null,
     warmupEnabled: false,
     warmupSetCount: null,
     warmupPercentages: null,
+    warmupRepsPerSet: null,
+    sets: [{ loadKg: null, reps: 5 }],
   };
+}
+
+function expandSets(ex: { setsConfig: SetDef[] | null; targetSets: number; targetLoadKg: number | null; targetReps: number | null }): SetDef[] {
+  if (ex.setsConfig?.length) return ex.setsConfig;
+  return Array.from({ length: ex.targetSets }, () => ({
+    loadKg: ex.targetLoadKg,
+    reps: ex.targetReps,
+  }));
 }
 
 export function TemplateEditorPage() {
@@ -42,10 +57,10 @@ export function TemplateEditorPage() {
   const isEditing = !!id;
   const navigate = useNavigate();
 
-  const unit = useWeightUnit();
   const { data: template, isLoading } = useTemplate(id);
   const createTemplate = useCreateTemplate();
   const updateTemplate = useUpdateTemplate(id ?? '');
+  const startSession = useStartSession();
 
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
@@ -61,22 +76,67 @@ export function TemplateEditorPage() {
         key: crypto.randomUUID(),
         exerciseId: ex.exerciseId,
         exerciseName: ex.exercise?.name ?? '',
+        exerciseWeightUnit: ex.exercise?.weightUnit ?? 'kg',
         orderIndex: ex.orderIndex,
-        targetSets: ex.targetSets,
-        targetReps: ex.targetReps,
-        targetLoadKg: ex.targetLoadKg,
         targetLoadPct: ex.targetLoadPct,
         referenceLiftId: ex.referenceLiftId,
         notes: ex.notes,
         warmupEnabled: ex.warmupEnabled,
         warmupSetCount: ex.warmupSetCount,
         warmupPercentages: ex.warmupPercentages,
+        warmupRepsPerSet: ex.warmupRepsPerSet,
+        sets: expandSets({
+          setsConfig: ex.setsConfig,
+          targetSets: ex.targetSets,
+          targetLoadKg: ex.targetLoadKg,
+          targetReps: ex.targetReps,
+        }),
       })),
     );
   }, [template]);
 
   function updateRow(key: string, patch: Partial<ExerciseRow>) {
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  }
+
+  function updateSet(rowKey: string, setIndex: number, patch: Partial<SetDef>) {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.key !== rowKey) return row;
+        const sets = row.sets.map((s, i) => (i === setIndex ? { ...s, ...patch } : s));
+        return { ...row, sets };
+      }),
+    );
+  }
+
+  function addSet(rowKey: string) {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.key !== rowKey) return row;
+        const last = row.sets[row.sets.length - 1] ?? { loadKg: null, reps: 5 };
+        return { ...row, sets: [...row.sets, { ...last }] };
+      }),
+    );
+  }
+
+  function cloneSet(rowKey: string, setIndex: number) {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.key !== rowKey) return row;
+        const copy = { ...row.sets[setIndex]! };
+        const sets = [...row.sets.slice(0, setIndex + 1), copy, ...row.sets.slice(setIndex + 1)];
+        return { ...row, sets };
+      }),
+    );
+  }
+
+  function removeSet(rowKey: string, setIndex: number) {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.key !== rowKey || row.sets.length <= 1) return row;
+        return { ...row, sets: row.sets.filter((_, i) => i !== setIndex) };
+      }),
+    );
   }
 
   function addRow() {
@@ -101,34 +161,68 @@ export function TemplateEditorPage() {
   }
 
   function onExerciseSelected(key: string, exerciseId: string, exercise: Exercise) {
-    updateRow(key, { exerciseId, exerciseName: exercise.name });
+    updateRow(key, {
+      exerciseId,
+      exerciseName: exercise.name,
+      exerciseWeightUnit: exercise.weightUnit,
+    });
   }
 
-  async function handleSubmit() {
-    setError(null);
+  function buildInput() {
+    return {
+      name: name.trim(),
+      notes: notes.trim() ? notes.trim() : null,
+      exercises: rows.map(({ key, exerciseName, exerciseWeightUnit, sets, ...rest }) => ({
+        ...rest,
+        targetSets: sets.length,
+        targetLoadKg: sets[0]?.loadKg ?? null,
+        targetReps: sets[0]?.reps ?? null,
+        setsConfig: sets,
+      })),
+    };
+  }
 
+  function validate(): boolean {
     if (!name.trim()) {
       setError('Template name is required');
-      return;
+      return false;
     }
     if (rows.some((row) => !row.exerciseId)) {
       setError('Select an exercise for every row');
-      return;
+      return false;
     }
+    return true;
+  }
 
-    const input = {
-      name: name.trim(),
-      notes: notes.trim() ? notes.trim() : null,
-      exercises: rows.map(({ key, exerciseName, ...rest }) => rest),
-    };
-
+  async function handleSave() {
+    setError(null);
+    if (!validate()) return;
     try {
       if (isEditing) {
-        await updateTemplate.mutateAsync(input);
+        await updateTemplate.mutateAsync(buildInput());
       } else {
-        await createTemplate.mutateAsync(input);
+        await createTemplate.mutateAsync(buildInput());
       }
       navigate('/templates');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save template');
+    }
+  }
+
+  async function handleSaveAndStart() {
+    setError(null);
+    if (!validate()) return;
+    try {
+      let templateId = id;
+      if (isEditing) {
+        await updateTemplate.mutateAsync(buildInput());
+        templateId = id;
+      } else {
+        const created = await createTemplate.mutateAsync(buildInput());
+        templateId = created.id;
+      }
+      const session = await startSession.mutateAsync({ templateId });
+      navigate(`/sessions/${session.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to save template');
     }
@@ -138,7 +232,7 @@ export function TemplateEditorPage() {
     return <p className="p-4 text-sm text-slate-400">Loading template…</p>;
   }
 
-  const saving = createTemplate.isPending || updateTemplate.isPending;
+  const saving = createTemplate.isPending || updateTemplate.isPending || startSession.isPending;
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -167,83 +261,100 @@ export function TemplateEditorPage() {
 
       <div className="space-y-4">
         <h2 className="text-lg font-medium">Exercises</h2>
-        {rows.map((row, i) => (
-          <div key={row.key} className="space-y-3 rounded-md border border-slate-800 bg-slate-900 p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Exercise {i + 1}</span>
-              <div className="flex gap-2 text-sm">
+        {rows.map((row, i) => {
+          const unit = row.exerciseWeightUnit;
+          const workingLoadKg = row.sets[0]?.loadKg ?? null;
+          return (
+            <div key={row.key} className="overflow-hidden rounded-md border border-slate-800 bg-slate-900">
+              <SwipeToDelete onDelete={() => removeRow(row.key)} deleteLabel="Remove">
+                <div className="flex items-center justify-between bg-slate-900 px-3 pt-3 pb-1">
+                  <span className="text-sm text-slate-400">Exercise {i + 1}</span>
+                  <div className="flex gap-2 text-sm">
+                    <button type="button" onClick={() => moveRow(row.key, -1)} disabled={i === 0} className="text-slate-400 disabled:opacity-30">↑</button>
+                    <button type="button" onClick={() => moveRow(row.key, 1)} disabled={i === rows.length - 1} className="text-slate-400 disabled:opacity-30">↓</button>
+                  </div>
+                </div>
+              </SwipeToDelete>
+              <div className="space-y-3 px-3 pb-3">
+
+              <ExercisePicker
+                value={row.exerciseId || null}
+                onChange={(exerciseId, exercise) => onExerciseSelected(row.key, exerciseId, exercise)}
+              />
+
+              <div>
+                <div className="mb-1 grid grid-cols-12 gap-1 px-1 text-xs text-slate-500">
+                  <div className="col-span-5">Load ({unit})</div>
+                  <div className="col-span-4">Reps</div>
+                  <div className="col-span-3" />
+                </div>
+                <div className="space-y-1">
+                  {row.sets.map((set, si) => (
+                    <SwipeToDelete
+                      key={si}
+                      onDelete={() => removeSet(row.key, si)}
+                      deleteLabel="×"
+                      disabled={row.sets.length <= 1}
+                    >
+                      <div className="grid grid-cols-12 items-center gap-1 bg-slate-900">
+                        <span className="col-span-1 text-xs text-slate-500">{si + 1}</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          placeholder="—"
+                          value={set.loadKg != null ? roundForDisplay(kgToDisplay(set.loadKg, unit)) : ''}
+                          onChange={(e) =>
+                            updateSet(row.key, si, {
+                              loadKg: e.target.value === '' ? null : displayToKg(Number(e.target.value), unit),
+                            })
+                          }
+                          className="col-span-4 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="—"
+                          value={set.reps ?? ''}
+                          onChange={(e) =>
+                            updateSet(row.key, si, {
+                              reps: e.target.value === '' ? null : Number(e.target.value),
+                            })
+                          }
+                          className="col-span-4 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => cloneSet(row.key, si)}
+                          title="Clone set below"
+                          className="col-span-3 text-center text-xs text-slate-400"
+                        >
+                          ↓+
+                        </button>
+                      </div>
+                    </SwipeToDelete>
+                  ))}
+                </div>
                 <button
                   type="button"
-                  onClick={() => moveRow(row.key, -1)}
-                  disabled={i === 0}
-                  className="text-slate-400 disabled:opacity-30"
+                  onClick={() => addSet(row.key)}
+                  className="mt-1 w-full rounded-md border border-dashed border-slate-700 py-1 text-xs text-slate-400"
                 >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveRow(row.key, 1)}
-                  disabled={i === rows.length - 1}
-                  className="text-slate-400 disabled:opacity-30"
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeRow(row.key)}
-                  className="text-red-400"
-                >
-                  Remove
+                  + Add set
                 </button>
               </div>
-            </div>
 
-            <ExercisePicker
-              value={row.exerciseId || null}
-              onChange={(exerciseId, exercise) => onExerciseSelected(row.key, exerciseId, exercise)}
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <NumberStepper
-                label="Sets"
-                value={row.targetSets}
-                onChange={(v) => updateRow(row.key, { targetSets: v })}
-                min={1}
-                max={20}
-              />
-              <NumberStepper
-                label="Reps"
-                value={row.targetReps ?? 0}
-                onChange={(v) => updateRow(row.key, { targetReps: v })}
-                min={0}
-                max={50}
+              <WarmupConfigEditor
+                enabled={row.warmupEnabled}
+                setCount={row.warmupSetCount}
+                percentages={row.warmupPercentages}
+                repsPerSet={row.warmupRepsPerSet}
+                workingLoadKg={workingLoadKg}
+                weightUnit={unit}
+                onChange={(patch) => updateRow(row.key, patch)}
               />
             </div>
-
-            <div>
-              <label className="mb-1 block text-sm text-slate-300">Target load ({unit})</label>
-              <input
-                type="number"
-                step="0.5"
-                value={row.targetLoadKg != null ? roundForDisplay(kgToDisplay(row.targetLoadKg, unit)) : ''}
-                onChange={(e) =>
-                  updateRow(row.key, {
-                    targetLoadKg: e.target.value === '' ? null : displayToKg(Number(e.target.value), unit),
-                  })
-                }
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
-              />
             </div>
-
-            <WarmupConfigEditor
-              enabled={row.warmupEnabled}
-              setCount={row.warmupSetCount}
-              percentages={row.warmupPercentages}
-              workingLoadKg={row.targetLoadKg}
-              onChange={(patch) => updateRow(row.key, patch)}
-            />
-          </div>
-        ))}
+          );
+        })}
 
         <button
           type="button"
@@ -256,14 +367,24 @@ export function TemplateEditorPage() {
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={saving}
-        className="w-full rounded-md bg-emerald-600 px-4 py-2 font-medium text-white disabled:opacity-50"
-      >
-        {saving ? 'Saving…' : 'Save template'}
-      </button>
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={handleSaveAndStart}
+          disabled={saving}
+          className="w-full rounded-md bg-emerald-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+        >
+          {startSession.isPending ? 'Starting…' : saving ? 'Saving…' : 'Save and start workout'}
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full rounded-md border border-slate-700 bg-slate-900 px-4 py-2 font-medium text-slate-200 disabled:opacity-50"
+        >
+          {saving && !startSession.isPending ? 'Saving…' : 'Save template'}
+        </button>
+      </div>
     </div>
   );
 }

@@ -31,6 +31,7 @@ export interface Exercise {
   name: string;
   category: ExerciseCategory;
   isSystem: boolean;
+  weightUnit: WeightUnit;
 }
 
 export interface TemplateExercise {
@@ -47,6 +48,8 @@ export interface TemplateExercise {
   warmupEnabled: boolean;
   warmupSetCount: number | null;
   warmupPercentages: number[] | null;
+  warmupRepsPerSet: number[] | null;
+  setsConfig: Array<{ loadKg: number | null; reps: number | null }> | null;
 }
 
 export interface WorkoutTemplate {

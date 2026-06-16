@@ -10,5 +10,6 @@ export function toExerciseDto(row: ExerciseRow): Exercise {
     name: row.name,
     category: row.category as ExerciseCategory,
     isSystem: row.isSystem,
+    weightUnit: (row.weightUnit ?? 'kg') as Exercise['weightUnit'],
   };
 }

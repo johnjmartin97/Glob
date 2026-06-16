@@ -21,14 +21,18 @@ const EXERCISE_CATEGORIES = [
   'other',
 ] as const;
 
+const WEIGHT_UNITS = ['kg', 'lb'] as const;
+
 const createExerciseSchema = z.object({
   name: z.string().min(1).max(100),
   category: z.enum(EXERCISE_CATEGORIES),
+  weightUnit: z.enum(WEIGHT_UNITS).optional(),
 });
 
 const updateExerciseSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   category: z.enum(EXERCISE_CATEGORIES).optional(),
+  weightUnit: z.enum(WEIGHT_UNITS).optional(),
 });
 
 const listQuerySchema = z.object({

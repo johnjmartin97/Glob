@@ -1,21 +1,25 @@
 import {
+  BAR_WEIGHT_KG,
   calculateWarmupSets,
   DEFAULT_WARMUP_PERCENTAGES,
   DEFAULT_WARMUP_REPS,
   formatWeight,
 } from '@glob/shared';
+import type { WeightUnit } from '@glob/shared';
 import { NumberStepper } from './NumberStepper';
-import { useWeightUnit } from '../hooks/useWeightUnit';
 
 interface WarmupConfigEditorProps {
   enabled: boolean;
   setCount: number | null;
   percentages: number[] | null;
+  repsPerSet: number[] | null;
   workingLoadKg: number | null;
+  weightUnit: WeightUnit;
   onChange: (patch: {
     warmupEnabled?: boolean;
     warmupSetCount?: number | null;
     warmupPercentages?: number[] | null;
+    warmupRepsPerSet?: number[] | null;
   }) => void;
 }
 
@@ -23,16 +27,19 @@ export function WarmupConfigEditor({
   enabled,
   setCount,
   percentages,
+  repsPerSet,
   workingLoadKg,
+  weightUnit,
   onChange,
 }: WarmupConfigEditorProps) {
-  const unit = useWeightUnit();
   const count = setCount ?? DEFAULT_WARMUP_PERCENTAGES.length;
   const pcts = percentages ?? DEFAULT_WARMUP_PERCENTAGES;
+  const reps = repsPerSet ?? Array.from({ length: count }, () => DEFAULT_WARMUP_REPS);
 
   function setCountTo(next: number) {
     const nextPcts = Array.from({ length: next }, (_, i) => pcts[i] ?? pcts[pcts.length - 1] ?? 50);
-    onChange({ warmupSetCount: next, warmupPercentages: nextPcts });
+    const nextReps = Array.from({ length: next }, (_, i) => reps[i] ?? DEFAULT_WARMUP_REPS);
+    onChange({ warmupSetCount: next, warmupPercentages: nextPcts, warmupRepsPerSet: nextReps });
   }
 
   function setPercentage(index: number, value: number) {
@@ -41,12 +48,19 @@ export function WarmupConfigEditor({
     onChange({ warmupPercentages: next });
   }
 
+  function setReps(index: number, value: number) {
+    const next = Array.from({ length: count }, (_, i) => reps[i] ?? DEFAULT_WARMUP_REPS);
+    next[index] = value;
+    onChange({ warmupRepsPerSet: next });
+  }
+
   const preview =
     enabled && workingLoadKg != null
       ? calculateWarmupSets({
           workingLoadKg,
           warmupSetCount: count,
           warmupPercentages: pcts,
+          warmupRepsPerSet: reps,
         })
       : [];
 
@@ -61,6 +75,7 @@ export function WarmupConfigEditor({
               warmupEnabled: e.target.checked,
               warmupSetCount: e.target.checked ? count : setCount,
               warmupPercentages: e.target.checked ? pcts : percentages,
+              warmupRepsPerSet: e.target.checked ? reps : repsPerSet,
             })
           }
           className="h-4 w-4 rounded border-slate-700 bg-slate-900"
@@ -79,11 +94,10 @@ export function WarmupConfigEditor({
           />
 
           <div className="space-y-2">
-            <p className="text-sm text-slate-300">Warmup set % of working load</p>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {pcts.slice(0, count).map((pct, i) => (
-                <div key={i}>
-                  <label className="mb-1 block text-xs text-slate-400">Set {i + 1}</label>
+                <div key={i} className="space-y-1">
+                  <label className="block text-xs text-slate-400">Set {i + 1}</label>
                   <input
                     type="number"
                     value={pct}
@@ -91,7 +105,21 @@ export function WarmupConfigEditor({
                     max={100}
                     onChange={(e) => setPercentage(i, Number(e.target.value))}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none"
+                    title="% of working load"
                   />
+                  <input
+                    type="number"
+                    value={reps[i] ?? DEFAULT_WARMUP_REPS}
+                    min={1}
+                    max={20}
+                    onChange={(e) => setReps(i, Number(e.target.value))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none"
+                    title="Reps"
+                  />
+                  <div className="flex justify-between px-0.5 text-xs text-slate-500">
+                    <span>%</span>
+                    <span>reps</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -109,13 +137,16 @@ export function WarmupConfigEditor({
                   <li key={set.setIndex} className="flex justify-between">
                     <span>Warmup {set.setIndex}</span>
                     <span>
-                      {formatWeight(set.prescribedLoadKg, unit)} × {set.prescribedReps ?? DEFAULT_WARMUP_REPS}
+                      {formatWeight(set.prescribedLoadKg, weightUnit)} × {set.prescribedReps ?? DEFAULT_WARMUP_REPS}
+                      {set.prescribedLoadKg === BAR_WEIGHT_KG && workingLoadKg > BAR_WEIGHT_KG && (
+                        <span className="ml-1 text-xs text-slate-500">(bar)</span>
+                      )}
                     </span>
                   </li>
                 ))}
                 <li className="flex justify-between text-slate-200">
                   <span>Working</span>
-                  <span>{formatWeight(workingLoadKg, unit)}</span>
+                  <span>{formatWeight(workingLoadKg, weightUnit)}</span>
                 </li>
               </ul>
             )}

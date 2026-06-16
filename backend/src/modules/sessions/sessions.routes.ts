@@ -210,6 +210,8 @@ sessionsRouter.post(
           warmupPercentages: templateExercise.warmupPercentages
             ? templateExercise.warmupPercentages.map((p) => Number(p))
             : null,
+          warmupRepsPerSet: templateExercise.warmupRepsPerSet ?? null,
+          setsConfig: templateExercise.setsConfig ?? null,
         });
 
         if (generatedSets.length) {

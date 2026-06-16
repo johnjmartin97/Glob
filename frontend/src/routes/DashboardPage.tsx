@@ -96,7 +96,7 @@ export function DashboardPage() {
           disabled={startSession.isPending}
           className="w-full rounded-md border border-dashed border-slate-700 px-4 py-2 text-sm text-slate-300 disabled:opacity-50"
         >
-          Start ad-hoc workout
+          Start quick workout
         </button>
         {templates?.slice(0, 3).map((template) => (
           <button

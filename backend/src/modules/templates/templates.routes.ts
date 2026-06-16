@@ -24,6 +24,11 @@ const templateExerciseSchema = z.object({
   warmupEnabled: z.boolean().default(false),
   warmupSetCount: z.number().int().min(1).max(10).nullable().optional(),
   warmupPercentages: z.array(z.number().min(0).max(100)).nullable().optional(),
+  warmupRepsPerSet: z.array(z.number().int().min(1)).nullable().optional(),
+  setsConfig: z.array(z.object({
+    loadKg: z.number().min(0).nullable(),
+    reps: z.number().int().min(0).nullable(),
+  })).min(1).nullable().optional(),
 });
 
 const templateSchema = z.object({
@@ -114,6 +119,8 @@ templatesRouter.post(
             warmupEnabled: ex.warmupEnabled,
             warmupSetCount: ex.warmupSetCount ?? null,
             warmupPercentages: ex.warmupPercentages?.map((p) => p.toString()) ?? null,
+            warmupRepsPerSet: ex.warmupRepsPerSet ?? null,
+            setsConfig: ex.setsConfig ?? null,
           })),
         );
       }
@@ -174,6 +181,8 @@ templatesRouter.put(
             warmupEnabled: ex.warmupEnabled,
             warmupSetCount: ex.warmupSetCount ?? null,
             warmupPercentages: ex.warmupPercentages?.map((p) => p.toString()) ?? null,
+            warmupRepsPerSet: ex.warmupRepsPerSet ?? null,
+            setsConfig: ex.setsConfig ?? null,
           })),
         );
       }

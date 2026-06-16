@@ -31,6 +31,8 @@ export function toTemplateExerciseDto(
     warmupPercentages: row.warmupPercentages
       ? row.warmupPercentages.map((p) => Number(p))
       : null,
+    warmupRepsPerSet: row.warmupRepsPerSet ?? null,
+    setsConfig: row.setsConfig ?? null,
   };
 }
 

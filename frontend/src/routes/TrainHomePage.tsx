@@ -10,10 +10,20 @@ export function TrainHomePage() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
-  async function start(templateId?: string, name?: string) {
+  async function startQuick() {
     setError(null);
     try {
-      const session = await startSession.mutateAsync({ templateId, name });
+      const session = await startSession.mutateAsync({ name: 'Quick Workout' });
+      navigate(`/sessions/${session.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to start session');
+    }
+  }
+
+  async function startFromTemplate(templateId: string) {
+    setError(null);
+    try {
+      const session = await startSession.mutateAsync({ templateId });
       navigate(`/sessions/${session.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to start session');
@@ -37,11 +47,11 @@ export function TrainHomePage() {
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <button
-        onClick={() => start(undefined, 'Workout')}
+        onClick={startQuick}
         disabled={startSession.isPending}
         className="w-full rounded-md border border-dashed border-slate-700 px-4 py-3 text-sm text-slate-300 disabled:opacity-50"
       >
-        Start ad-hoc workout
+        Start quick workout
       </button>
 
       <div className="space-y-2">
@@ -58,16 +68,16 @@ export function TrainHomePage() {
               key={template.id}
               className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900 px-3 py-3"
             >
-              <div>
+              <Link to={`/templates/${template.id}/edit`} className="flex-1">
                 <p className="font-medium">{template.name}</p>
                 <p className="text-sm text-slate-400">
                   {template.exerciseCount} exercise{template.exerciseCount === 1 ? '' : 's'}
                 </p>
-              </div>
+              </Link>
               <button
-                onClick={() => start(template.id)}
+                onClick={() => startFromTemplate(template.id)}
                 disabled={startSession.isPending}
-                className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="ml-3 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 Start
               </button>

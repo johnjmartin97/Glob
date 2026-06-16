@@ -1,0 +1,1 @@
+ALTER TABLE "template_exercises" ADD COLUMN "sets_config" json;

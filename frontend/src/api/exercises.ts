@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Exercise, ExerciseCategory } from '@glob/shared';
+import type { Exercise, ExerciseCategory, WeightUnit } from '@glob/shared';
 import { api } from './client';
 
 export const EXERCISE_CATEGORIES: { value: ExerciseCategory; label: string }[] = [
@@ -22,8 +22,19 @@ export function useExercises(category?: ExerciseCategory) {
 export function useCreateExercise() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; category: ExerciseCategory }) =>
+    mutationFn: (input: { name: string; category: ExerciseCategory; weightUnit?: WeightUnit }) =>
       api.post<Exercise>('/exercises', input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['exercises'] });
+    },
+  });
+}
+
+export function useUpdateExercise() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; weightUnit?: WeightUnit; name?: string; category?: ExerciseCategory }) =>
+      api.patch<Exercise>(`/exercises/${id}`, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exercises'] });
     },

@@ -109,6 +109,16 @@ export function useAddSessionExercise(sessionId: string) {
   });
 }
 
+export function useDeleteSessionSet(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (setId: string) => api.delete<WorkoutSession>(`/sessions/sets/${setId}`),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['sessions', sessionId], data);
+    },
+  });
+}
+
 export function useAddSessionSet(sessionId: string) {
   const queryClient = useQueryClient();
   return useMutation({
