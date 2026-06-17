@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDeleteSession, useSessions } from '../api/sessions';
 
 export function HistoryPage() {
   const { data: sessions, isLoading } = useSessions();
   const deleteSession = useDeleteSession();
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   return (
     <div className="space-y-4 p-4">
@@ -33,16 +35,29 @@ export function HistoryPage() {
                 {session.completedAt ? ' · Completed' : ' · In progress'}
               </p>
             </Link>
-            <button
-              onClick={() => {
-                if (confirm(`Delete "${session.name}"?`)) {
-                  deleteSession.mutate(session.id);
-                }
-              }}
-              className="text-sm text-red-400"
-            >
-              Delete
-            </button>
+            {pendingDeleteId === session.id ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { deleteSession.mutate(session.id); setPendingDeleteId(null); }}
+                  className="text-sm text-red-400"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={() => setPendingDeleteId(null)}
+                  className="text-sm text-slate-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setPendingDeleteId(session.id)}
+                className="text-sm text-red-400"
+              >
+                Delete
+              </button>
+            )}
           </li>
         ))}
       </ul>

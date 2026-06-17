@@ -37,11 +37,7 @@ export function TemplatesPage() {
         {templates?.map((template) => (
           <li key={template.id} className="overflow-hidden rounded-md border border-slate-800">
             <SwipeToDelete
-              onDelete={() => {
-                if (confirm(`Delete "${template.name}"?`)) {
-                  deleteTemplate.mutate(template.id);
-                }
-              }}
+              onDelete={() => deleteTemplate.mutate(template.id)}
             >
               <div className="flex items-center bg-slate-900 px-3 py-3">
                 <Link to={`/templates/${template.id}/edit`} className="flex-1">
