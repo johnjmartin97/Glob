@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { useCreateFoodItem, useDeleteFoodItem, useFoodItems } from '../api/nutrition';
+import { fetchBarcodeFood, useCreateFoodItem, useDeleteFoodItem, useExternalFoodSearch, useFoodItems } from '../api/nutrition';
 import { ApiError } from '../api/client';
+import type { ExternalFoodResult } from '@glob/shared';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 
 const emptyForm = {
   name: '',
@@ -21,6 +23,13 @@ export function FoodLibraryPage() {
 
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [extQuery, setExtQuery] = useState('');
+  const [importedKey, setImportedKey] = useState<string | null>(null);
+  const extSearch = useExternalFoodSearch(extQuery);
+
+  const [scanning, setScanning] = useState(false);
+  const [barcodeResult, setBarcodeResult] = useState<ExternalFoodResult | null | 'not-found'>(null);
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -46,6 +55,32 @@ export function FoodLibraryPage() {
     }
   }
 
+  async function handleBarcodeScan(upc: string) {
+    setScanning(false);
+    setBarcodeResult(null);
+    setBarcodeLoading(true);
+    try {
+      const result = await fetchBarcodeFood(upc);
+      setBarcodeResult(result ?? 'not-found');
+    } catch {
+      setError('Could not look up barcode. Try again.');
+    } finally {
+      setBarcodeLoading(false);
+    }
+  }
+
+  async function handleImport(result: ExternalFoodResult) {
+    setError(null);
+    try {
+      await createFood.mutateAsync(result);
+      const key = `${result.name}|${result.brand ?? ''}`;
+      setImportedKey(key);
+      setTimeout(() => setImportedKey(null), 2000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to import food item');
+    }
+  }
+
   async function handleDelete(id: string) {
     setError(null);
     try {
@@ -62,6 +97,117 @@ export function FoodLibraryPage() {
         <Link to="/nutrition" className="text-sm text-emerald-400">
           Back
         </Link>
+      </div>
+
+      {scanning && (
+        <BarcodeScanner onDetected={handleBarcodeScan} onClose={() => setScanning(false)} />
+      )}
+
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <input
+            type="search"
+            placeholder="Search food database…"
+            value={extQuery}
+            onChange={(e) => { setExtQuery(e.target.value); setBarcodeResult(null); }}
+            className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => setScanning(true)}
+            className="shrink-0 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-slate-300"
+            aria-label="Scan barcode"
+          >
+            &#x1F4F7;
+          </button>
+        </div>
+
+        {barcodeLoading && <p className="text-sm text-slate-400">Looking up barcode…</p>}
+
+        {barcodeResult === 'not-found' && (
+          <p className="text-sm text-slate-400">No product found for this barcode.</p>
+        )}
+
+        {barcodeResult && barcodeResult !== 'not-found' && (() => {
+          const key = `${barcodeResult.name}|${barcodeResult.brand ?? ''}`;
+          return (
+            <div className="flex items-center justify-between rounded-md border border-slate-700 bg-slate-950 px-3 py-2">
+              <div className="min-w-0 flex-1 pr-2">
+                <p className="truncate font-medium">
+                  {barcodeResult.name}
+                  {barcodeResult.brand && <span className="text-slate-400"> · {barcodeResult.brand}</span>}
+                </p>
+                <p className="text-sm text-slate-400">
+                  {barcodeResult.servingSize}{barcodeResult.servingUnit} · {barcodeResult.calories} kcal · P{barcodeResult.proteinG} C{barcodeResult.carbsG} F{barcodeResult.fatG}
+                </p>
+              </div>
+              <div className="shrink-0">
+                {importedKey === key ? (
+                  <span className="text-sm text-emerald-400">Imported!</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleImport(barcodeResult as ExternalFoodResult)}
+                    disabled={createFood.isPending}
+                    className="rounded-md bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    Import
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {extSearch.isFetching && (
+          <p className="text-sm text-slate-400">Searching…</p>
+        )}
+
+        {extSearch.isError && (
+          <p className="text-sm text-red-400">Could not reach food database. Try again.</p>
+        )}
+
+        {extSearch.data && extSearch.data.length === 0 && extQuery.length >= 2 && !extSearch.isFetching && (
+          <p className="text-sm text-slate-400">No results found.</p>
+        )}
+
+        {extSearch.data && extSearch.data.length > 0 && (
+          <ul className="space-y-2">
+            {extSearch.data.map((result) => {
+              const key = `${result.name}|${result.brand ?? ''}`;
+              return (
+                <li
+                  key={key}
+                  className="flex items-center justify-between rounded-md border border-slate-700 bg-slate-950 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1 pr-2">
+                    <p className="truncate font-medium">
+                      {result.name}
+                      {result.brand && <span className="text-slate-400"> · {result.brand}</span>}
+                    </p>
+                    <p className="text-sm text-slate-400">
+                      {result.servingSize}{result.servingUnit} · {result.calories} kcal · P{result.proteinG} C{result.carbsG} F{result.fatG}
+                    </p>
+                  </div>
+                  <div className="shrink-0">
+                    {importedKey === key ? (
+                      <span className="text-sm text-emerald-400">Imported!</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleImport(result)}
+                        disabled={createFood.isPending}
+                        className="rounded-md bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        Import
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3 rounded-md border border-slate-800 bg-slate-900 p-3">

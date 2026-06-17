@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FoodItem, FoodLogEntry, MacroTotals, MealType, NutritionTarget } from '@glob/shared';
+import type { ExternalFoodResult, FoodItem, FoodLogEntry, MacroTotals, MealType, NutritionTarget } from '@glob/shared';
 import { api } from './client';
+import { useDebounce } from '../hooks/useDebounce';
 
 export interface FoodItemInput {
   name: string;
@@ -99,5 +100,23 @@ export function useDeleteLogEntry(date: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nutrition', 'logs', date] });
     },
+  });
+}
+
+export function fetchBarcodeFood(upc: string): Promise<ExternalFoodResult | null> {
+  return api.get<ExternalFoodResult | null>(`/nutrition/foods/barcode/${encodeURIComponent(upc)}`);
+}
+
+export function useExternalFoodSearch(query: string) {
+  const debouncedQuery = useDebounce(query, 400);
+  return useQuery({
+    queryKey: ['nutrition', 'foods', 'external', debouncedQuery],
+    queryFn: () =>
+      api.get<ExternalFoodResult[]>(
+        `/nutrition/foods/search-external?q=${encodeURIComponent(debouncedQuery)}`
+      ),
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
   });
 }

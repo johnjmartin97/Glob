@@ -114,6 +114,17 @@ export interface FoodItem {
   fatG: number;
 }
 
+export interface ExternalFoodResult {
+  name: string;
+  brand: string | null;
+  servingSize: number;
+  servingUnit: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+}
+
 export interface FoodLogEntry {
   id: string;
   foodItemId: string;

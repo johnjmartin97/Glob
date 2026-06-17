@@ -5,7 +5,9 @@ import { db } from '../../db/client';
 import { foodItems, foodLogEntries, nutritionTargets } from '../../db/schema/index';
 import { requireAuth } from '../../middleware/requireAuth';
 import { asyncHandler } from '../../utils/asyncHandler';
-import { ConflictError, NotFoundError } from '../../utils/errors';
+import { ConflictError, HttpError, NotFoundError } from '../../utils/errors';
+import type { ExternalFoodResult } from '@glob/shared';
+import { env } from '../../config/env';
 import { toFoodItemDto, toFoodLogEntryDto, toNutritionTargetDto } from './nutrition.dto';
 
 export const nutritionRouter = Router();
@@ -110,6 +112,102 @@ nutritionRouter.put(
       .returning();
 
     res.json(toNutritionTargetDto(row!));
+  }),
+);
+
+// --- External food search (USDA FoodData Central) ---
+
+interface FdcNutrient {
+  nutrientId: number;
+  value?: number | null;
+}
+
+interface FdcFood {
+  description?: string | null;
+  brandOwner?: string | null;
+  brandName?: string | null;
+  servingSize?: number | null;
+  servingSizeUnit?: string | null;
+  foodNutrients?: FdcNutrient[];
+}
+
+interface FdcApiResponse {
+  foods?: FdcFood[];
+}
+
+const KCAL_ID = 1008, PROTEIN_ID = 1003, CARBS_ID = 1005, FAT_ID = 1004;
+
+function nutrientValue(nutrients: FdcNutrient[], id: number): number {
+  return nutrients.find((n) => n.nutrientId === id)?.value ?? 0;
+}
+
+function transformFood(f: FdcFood): ExternalFoodResult | null {
+  const name = f.description?.trim() ?? '';
+  if (!name) return null;
+
+  const nutrients = f.foodNutrients ?? [];
+  const calories = nutrientValue(nutrients, KCAL_ID);
+  if (!isFinite(calories)) return null;
+
+  const brand = (f.brandName ?? f.brandOwner ?? '').trim() || null;
+
+  return {
+    name,
+    brand,
+    servingSize: Math.round((f.servingSize ?? 100) * 100) / 100,
+    servingUnit: f.servingSizeUnit?.trim() || 'g',
+    calories: Math.round(calories * 10) / 10,
+    proteinG: Math.round(nutrientValue(nutrients, PROTEIN_ID) * 10) / 10,
+    carbsG: Math.round(nutrientValue(nutrients, CARBS_ID) * 10) / 10,
+    fatG: Math.round(nutrientValue(nutrients, FAT_ID) * 10) / 10,
+  };
+}
+
+nutritionRouter.get(
+  '/foods/search-external',
+  asyncHandler(async (req, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (!q) { res.json([]); return; }
+
+    const url = new URL('https://api.nal.usda.gov/fdc/v1/foods/search');
+    url.searchParams.set('query', q);
+    url.searchParams.set('api_key', env.USDA_API_KEY);
+    url.searchParams.set('dataType', 'Branded');
+    url.searchParams.set('pageSize', '15');
+
+    const response = await fetch(url.toString(), {
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) throw new HttpError(502, 'External food database unavailable');
+
+    const data = await response.json() as FdcApiResponse;
+    const results = (data.foods ?? [])
+      .map(transformFood)
+      .filter((r): r is ExternalFoodResult => r !== null);
+
+    res.json(results);
+  }),
+);
+
+nutritionRouter.get(
+  '/foods/barcode/:upc',
+  asyncHandler(async (req, res) => {
+    const upc = (req.params.upc ?? '').trim();
+
+    const url = new URL('https://api.nal.usda.gov/fdc/v1/foods/search');
+    url.searchParams.set('query', upc);
+    url.searchParams.set('api_key', env.USDA_API_KEY);
+    url.searchParams.set('dataType', 'Branded');
+    url.searchParams.set('pageSize', '5');
+
+    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new HttpError(502, 'External food database unavailable');
+
+    const data = await response.json() as FdcApiResponse;
+    const result = (data.foods ?? []).map(transformFood).find((r): r is ExternalFoodResult => r !== null) ?? null;
+
+    res.json(result);
   }),
 );
 

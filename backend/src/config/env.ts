@@ -14,6 +14,7 @@ const envSchema = z.object({
     .default('3001')
     .transform((v) => Number.parseInt(v, 10)),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  USDA_API_KEY: z.string().default('DEMO_KEY'),
 });
 
 export const env = envSchema.parse(process.env);
