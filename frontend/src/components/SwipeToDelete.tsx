@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const DELETE_WIDTH = 72;
 const SNAP_THRESHOLD = DELETE_WIDTH * 0.4;
@@ -18,6 +18,17 @@ export function SwipeToDelete({ onDelete, deleteLabel = 'Delete', children, clas
   const startY = useRef<number | null>(null);
   const startOffset = useRef(0);
   const directionLocked = useRef<'h' | 'v' | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: TouchEvent) => {
+      if (directionLocked.current === 'h') e.preventDefault();
+    };
+    el.addEventListener('touchmove', handler, { passive: false });
+    return () => el.removeEventListener('touchmove', handler);
+  }, []);
 
   if (disabled) return <>{children}</>;
 
@@ -45,7 +56,6 @@ export function SwipeToDelete({ onDelete, deleteLabel = 'Delete', children, clas
 
     if (directionLocked.current !== 'h') return;
 
-    e.preventDefault();
     const next = Math.min(0, Math.max(-DELETE_WIDTH, startOffset.current + dx));
     setOffset(next);
   }
@@ -54,11 +64,11 @@ export function SwipeToDelete({ onDelete, deleteLabel = 'Delete', children, clas
     setDragging(false);
     startX.current = null;
     startY.current = null;
-    setOffset(offset < -SNAP_THRESHOLD ? -DELETE_WIDTH : 0);
+    setOffset(prev => prev < -SNAP_THRESHOLD ? -DELETE_WIDTH : 0);
   }
 
   return (
-    <div className={`relative overflow-hidden ${className ?? ''}`}>
+    <div ref={containerRef} className={`relative overflow-hidden ${className ?? ''}`}>
       <div
         className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-600"
         style={{ width: DELETE_WIDTH }}
