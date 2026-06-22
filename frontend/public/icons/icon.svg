@@ -2,39 +2,56 @@
   <!-- Background -->
   <rect width="512" height="512" fill="#0f172a"/>
 
-  <!-- Blob body -->
-  <path d="M 256 95
-    C 318 82, 405 128, 422 208
-    C 439 288, 412 372, 350 410
-    C 292 448, 196 442, 144 398
-    C 92 354, 85 268, 107 200
-    C 129 132, 200 108, 256 95 Z"
-    fill="#9333ea"/>
+  <g transform="translate(92.16 92.16) scale(0.64)">
+    <!-- Body: roughly circular but with a fluid, slightly irregular splat outline -->
+    <path d="M 256 94
+      C 300.5 94 348.5 102.7 381.9 136.1
+      C 415.3 169.5 421 218.3 421 262
+      C 421 305.7 417 355.6 383.3 389.3
+      C 349.6 423 301.6 434 256 434
+      C 210.4 434 164.5 419.5 131.5 386.5
+      C 98.5 353.5 93 305.2 93 262
+      C 93 218.8 93.2 167.4 127.3 133.3
+      C 161.4 99.2 211.5 94 256 94
+      Z"
+      fill="#9333ea"/>
 
-  <!-- Subtle highlight to give it a bit of depth -->
-  <path d="M 230 118
-    C 270 106, 340 130, 360 175
-    C 368 193, 350 205, 330 190
-    C 310 175, 275 155, 240 150
-    C 218 145, 205 135, 230 118 Z"
-    fill="#a855f7" opacity="0.5"/>
+    <!-- Right arm: shoulder anchored in the lower third of the body -> bicep straight out at 90 degrees, lengthened to 200 -> forearm bends 60 degrees from the bicep (also length 200), raising the fist further from the head -->
+    <path d="M 370 332 L 570 332 L 470 159" fill="none" stroke="#9333ea" stroke-width="80" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="470" cy="159" r="48" fill="#9333ea"/>
+    <circle cx="570" cy="332" r="60" fill="#9333ea"/>
+    <circle cx="495" cy="305" r="52" fill="#9333ea"/>
+    <ellipse cx="588" cy="352" rx="34" ry="23" fill="#581c87" opacity="0.65" transform="rotate(35 588 352)"/>
+    <ellipse cx="554" cy="309" rx="30" ry="20" fill="#d8b4fe" opacity="0.85" transform="rotate(30 554 309)"/>
 
-  <!-- Left eye (white) -->
-  <ellipse cx="204" cy="248" rx="27" ry="31" fill="white"/>
-  <!-- Right eye (white) -->
-  <ellipse cx="308" cy="248" rx="27" ry="31" fill="white"/>
+    <!-- Left arm (mirrored) -->
+    <path d="M 142 332 L -58 332 L 42 159" fill="none" stroke="#9333ea" stroke-width="80" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="42" cy="159" r="48" fill="#9333ea"/>
+    <circle cx="-58" cy="332" r="60" fill="#9333ea"/>
+    <circle cx="17" cy="305" r="52" fill="#9333ea"/>
+    <ellipse cx="-76" cy="352" rx="34" ry="23" fill="#581c87" opacity="0.65" transform="rotate(-35 -76 352)"/>
+    <ellipse cx="-42" cy="309" rx="30" ry="20" fill="#d8b4fe" opacity="0.85" transform="rotate(-30 -42 309)"/>
 
-  <!-- Left pupil -->
-  <ellipse cx="211" cy="255" rx="14" ry="17" fill="#1e1b4b"/>
-  <!-- Right pupil -->
-  <ellipse cx="315" cy="255" rx="14" ry="17" fill="#1e1b4b"/>
+    <!-- Soft gloss highlight near the crown for a fluid sheen -->
+    <path d="M 195 130
+      C 230 113 288 124 312 158
+      C 322 174 308 188 290 176
+      C 270 162 240 146 210 144
+      C 190 142 178 142 195 130 Z"
+      fill="#a855f7" opacity="0.5"/>
 
-  <!-- Left eye shine -->
-  <ellipse cx="204" cy="244" rx="6" ry="7" fill="white" opacity="0.6"/>
-  <!-- Right eye shine -->
-  <ellipse cx="308" cy="244" rx="6" ry="7" fill="white" opacity="0.6"/>
+    <!-- Eyes: big, round, centered, looking straight ahead -->
+    <ellipse cx="205" cy="235" rx="32" ry="36" fill="white"/>
+    <ellipse cx="307" cy="235" rx="32" ry="36" fill="white"/>
+    <circle cx="205" cy="241" r="16" fill="#1e1b4b"/>
+    <circle cx="307" cy="241" r="16" fill="#1e1b4b"/>
+    <circle cx="198" cy="231" r="6.5" fill="white" opacity="0.85"/>
+    <circle cx="300" cy="231" r="6.5" fill="white" opacity="0.85"/>
 
-  <!-- Mouth -->
-  <path d="M 220 312 Q 256 338 292 312"
-    stroke="#1e1b4b" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <!-- Big happy open smile -->
+    <path d="M 193 322
+      C 193 370 319 370 319 322
+      C 305 354 207 354 193 322 Z"
+      fill="#1e1b4b"/>
+  </g>
 </svg>

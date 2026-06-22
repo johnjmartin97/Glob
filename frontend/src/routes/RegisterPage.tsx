@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Logo } from '../components/Logo';
 
 export function RegisterPage() {
   const { user, register, registerError } = useAuth();
@@ -29,6 +30,7 @@ export function RegisterPage() {
     <div className="flex h-full flex-col items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-6">
         <div>
+          <Logo className="mx-auto mb-2 h-24 w-24" />
           <h1 className="text-2xl font-semibold">Create your account</h1>
           <p className="text-sm text-slate-400">Start tracking your training.</p>
         </div>

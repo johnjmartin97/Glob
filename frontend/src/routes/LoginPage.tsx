@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Logo } from '../components/Logo';
 
 export function LoginPage() {
   const { user, login, loginError } = useAuth();
@@ -28,6 +29,7 @@ export function LoginPage() {
     <div className="flex h-full flex-col items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-6">
         <div>
+          <Logo className="mx-auto mb-2 h-24 w-24" />
           <h1 className="text-2xl font-semibold">Welcome back</h1>
           <p className="text-sm text-slate-400">Log in to continue training.</p>
         </div>
