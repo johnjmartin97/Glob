@@ -1,15 +1,23 @@
 import type { SetType } from './types.js';
 
-export const DEFAULT_WARMUP_PERCENTAGES = [40, 60, 80];
+export const DEFAULT_WARMUP_PERCENTAGES = [0, 50, 60, 70, 80, 90];
+export const DEFAULT_WARMUP_REPS_PER_SET = [10, 5, 1, 1, 1, 1];
 export const DEFAULT_PLATE_INCREMENT_KG = 2.5;
 export const DEFAULT_WARMUP_REPS = 5;
 export const BAR_WEIGHT_KG = 20;
+
+/** Default reps for warmup set `i`, falling back to the scalar default beyond the per-set array. */
+export function defaultWarmupRepsForIndex(i: number): number {
+  return DEFAULT_WARMUP_REPS_PER_SET[i] ?? DEFAULT_WARMUP_REPS;
+}
 
 export interface GeneratedSet {
   setIndex: number;
   setType: SetType;
   prescribedLoadKg: number | null;
   prescribedReps: number | null;
+  prescribedRpe: number | null;
+  prescribedVelocityMps: number | null;
 }
 
 export interface WarmupCalculatorInput {
@@ -48,12 +56,14 @@ export function calculateWarmupSets(input: WarmupCalculatorInput): GeneratedSet[
     const rawLoad = workingLoadKg * (pct / 100);
     const rounded = roundToNearestIncrement(rawLoad, plateIncrementKg);
     const prescribedLoadKg = Math.max(BAR_WEIGHT_KG, rounded);
-    const prescribedReps = warmupRepsPerSet?.[i] ?? DEFAULT_WARMUP_REPS;
+    const prescribedReps = warmupRepsPerSet?.[i] ?? defaultWarmupRepsForIndex(i);
     sets.push({
       setIndex: i + 1,
       setType: 'warmup',
       prescribedLoadKg,
       prescribedReps,
+      prescribedRpe: null,
+      prescribedVelocityMps: null,
     });
   }
   return sets;
@@ -67,16 +77,25 @@ export interface TemplateExerciseForSetGeneration {
   warmupSetCount: number | null;
   warmupPercentages: number[] | null;
   warmupRepsPerSet: number[] | null;
-  setsConfig: Array<{ loadKg: number | null; reps: number | null }> | null;
+  setsConfig: SetConfigEntry[] | null;
+}
+
+interface SetConfigEntry {
+  loadKg: number | null;
+  reps: number | null;
+  rpe: number | null;
+  velocityMps: number | null;
 }
 
 function expandToSetsConfig(
   ex: Pick<TemplateExerciseForSetGeneration, 'targetSets' | 'targetLoadKg' | 'targetReps' | 'setsConfig'>,
-): Array<{ loadKg: number | null; reps: number | null }> {
+): SetConfigEntry[] {
   if (ex.setsConfig?.length) return ex.setsConfig;
   return Array.from({ length: ex.targetSets }, () => ({
     loadKg: ex.targetLoadKg,
     reps: ex.targetReps,
+    rpe: null,
+    velocityMps: null,
   }));
 }
 
@@ -115,6 +134,8 @@ export function generateSessionSets(
       setType: 'working',
       prescribedLoadKg: setDef.loadKg,
       prescribedReps: setDef.reps,
+      prescribedRpe: setDef.rpe ?? null,
+      prescribedVelocityMps: setDef.velocityMps ?? null,
     });
   });
 

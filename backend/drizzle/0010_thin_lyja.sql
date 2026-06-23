@@ -1,0 +1,1 @@
+ALTER TABLE "session_sets" ADD COLUMN "actual_velocity_mps" numeric(4, 2);

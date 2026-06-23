@@ -17,12 +17,16 @@ import { SwipeToDelete } from '../components/SwipeToDelete';
 interface SetDef {
   loadKg: number | null;
   reps: number | null;
+  rpe: number | null;
+  velocityMps: number | null;
 }
 
 interface ExerciseRow extends Omit<TemplateExerciseInput, 'targetSets' | 'targetReps' | 'targetLoadKg' | 'setsConfig'> {
   key: string;
   exerciseName: string;
   exerciseWeightUnit: 'kg' | 'lb';
+  exerciseLogRpe: boolean;
+  exerciseLogVelocity: boolean;
   sets: SetDef[];
 }
 
@@ -32,6 +36,8 @@ function emptyRow(orderIndex: number): ExerciseRow {
     exerciseId: '',
     exerciseName: '',
     exerciseWeightUnit: 'kg',
+    exerciseLogRpe: true,
+    exerciseLogVelocity: false,
     orderIndex,
     targetLoadPct: null,
     referenceLiftId: null,
@@ -40,16 +46,35 @@ function emptyRow(orderIndex: number): ExerciseRow {
     warmupSetCount: null,
     warmupPercentages: null,
     warmupRepsPerSet: null,
-    sets: [{ loadKg: null, reps: 5 }],
+    sets: [{ loadKg: null, reps: 5, rpe: null, velocityMps: null }],
   };
 }
 
 function expandSets(ex: { setsConfig: SetDef[] | null; targetSets: number; targetLoadKg: number | null; targetReps: number | null }): SetDef[] {
-  if (ex.setsConfig?.length) return ex.setsConfig;
+  if (ex.setsConfig?.length) {
+    return ex.setsConfig.map((s) => ({
+      loadKg: s.loadKg,
+      reps: s.reps,
+      rpe: s.rpe ?? null,
+      velocityMps: s.velocityMps ?? null,
+    }));
+  }
   return Array.from({ length: ex.targetSets }, () => ({
     loadKg: ex.targetLoadKg,
     reps: ex.targetReps,
+    rpe: null,
+    velocityMps: null,
   }));
+}
+
+// Literal col-span-* classes summing to 12 with fixed `#` (1) and clone (2) columns, plus the
+// visible RPE/Vel target columns. Used for both the set header and each set row.
+function templateSetSpans(logRpe: boolean, logVelocity: boolean) {
+  if (logRpe && logVelocity)
+    return { load: 'col-span-3', reps: 'col-span-2', rpe: 'col-span-2', vel: 'col-span-2' };
+  if (logRpe) return { load: 'col-span-4', reps: 'col-span-3', rpe: 'col-span-2', vel: '' };
+  if (logVelocity) return { load: 'col-span-4', reps: 'col-span-3', rpe: '', vel: 'col-span-2' };
+  return { load: 'col-span-5', reps: 'col-span-4', rpe: '', vel: '' };
 }
 
 export function TemplateEditorPage() {
@@ -77,6 +102,8 @@ export function TemplateEditorPage() {
         exerciseId: ex.exerciseId,
         exerciseName: ex.exercise?.name ?? '',
         exerciseWeightUnit: ex.exercise?.weightUnit ?? 'kg',
+        exerciseLogRpe: ex.exercise?.logRpe ?? true,
+        exerciseLogVelocity: ex.exercise?.logVelocity ?? false,
         orderIndex: ex.orderIndex,
         targetLoadPct: ex.targetLoadPct,
         referenceLiftId: ex.referenceLiftId,
@@ -113,7 +140,7 @@ export function TemplateEditorPage() {
     setRows((prev) =>
       prev.map((row) => {
         if (row.key !== rowKey) return row;
-        const last = row.sets[row.sets.length - 1] ?? { loadKg: null, reps: 5 };
+        const last = row.sets[row.sets.length - 1] ?? { loadKg: null, reps: 5, rpe: null, velocityMps: null };
         return { ...row, sets: [...row.sets, { ...last }] };
       }),
     );
@@ -165,6 +192,8 @@ export function TemplateEditorPage() {
       exerciseId,
       exerciseName: exercise.name,
       exerciseWeightUnit: exercise.weightUnit,
+      exerciseLogRpe: exercise.logRpe,
+      exerciseLogVelocity: exercise.logVelocity,
     });
   }
 
@@ -172,7 +201,7 @@ export function TemplateEditorPage() {
     return {
       name: name.trim(),
       notes: notes.trim() ? notes.trim() : null,
-      exercises: rows.map(({ key, exerciseName, exerciseWeightUnit, sets, ...rest }) => ({
+      exercises: rows.map(({ key, exerciseName, exerciseWeightUnit, exerciseLogRpe, exerciseLogVelocity, sets, ...rest }) => ({
         ...rest,
         targetSets: sets.length,
         targetLoadKg: sets[0]?.loadKg ?? null,
@@ -264,6 +293,7 @@ export function TemplateEditorPage() {
         {rows.map((row, i) => {
           const unit = row.exerciseWeightUnit;
           const workingLoadKg = row.sets[0]?.loadKg ?? null;
+          const setSpans = templateSetSpans(row.exerciseLogRpe, row.exerciseLogVelocity);
           return (
             <div key={row.key} className="overflow-hidden rounded-md border border-slate-800 bg-slate-900">
               <SwipeToDelete onDelete={() => removeRow(row.key)} deleteLabel="Remove">
@@ -284,9 +314,12 @@ export function TemplateEditorPage() {
 
               <div>
                 <div className="mb-1 grid grid-cols-12 gap-1 px-1 text-xs text-slate-500">
-                  <div className="col-span-5">Load ({unit})</div>
-                  <div className="col-span-4">Reps</div>
-                  <div className="col-span-3" />
+                  <div className="col-span-1" />
+                  <div className={setSpans.load}>Load ({unit})</div>
+                  <div className={setSpans.reps}>Reps</div>
+                  {row.exerciseLogRpe && <div className={setSpans.rpe}>RPE</div>}
+                  {row.exerciseLogVelocity && <div className={setSpans.vel}>m/s</div>}
+                  <div className="col-span-2" />
                 </div>
                 <div className="space-y-1">
                   {row.sets.map((set, si) => (
@@ -308,7 +341,7 @@ export function TemplateEditorPage() {
                               loadKg: e.target.value === '' ? null : displayToKg(Number(e.target.value), unit),
                             })
                           }
-                          className="col-span-4 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none"
+                          className={`${setSpans.load} rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none`}
                         />
                         <input
                           type="number"
@@ -319,13 +352,41 @@ export function TemplateEditorPage() {
                               reps: e.target.value === '' ? null : Number(e.target.value),
                             })
                           }
-                          className="col-span-4 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none"
+                          className={`${setSpans.reps} rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none`}
                         />
+                        {row.exerciseLogRpe && (
+                          <input
+                            type="number"
+                            step="0.5"
+                            placeholder="RPE"
+                            value={set.rpe ?? ''}
+                            onChange={(e) =>
+                              updateSet(row.key, si, {
+                                rpe: e.target.value === '' ? null : Number(e.target.value),
+                              })
+                            }
+                            className={`${setSpans.rpe} rounded-md border border-slate-700 bg-slate-950 px-1 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none`}
+                          />
+                        )}
+                        {row.exerciseLogVelocity && (
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="m/s"
+                            value={set.velocityMps ?? ''}
+                            onChange={(e) =>
+                              updateSet(row.key, si, {
+                                velocityMps: e.target.value === '' ? null : Number(e.target.value),
+                              })
+                            }
+                            className={`${setSpans.vel} rounded-md border border-slate-700 bg-slate-950 px-1 py-1.5 text-center text-sm focus:border-emerald-500 focus:outline-none`}
+                          />
+                        )}
                         <button
                           type="button"
                           onClick={() => cloneSet(row.key, si)}
                           title="Clone set below"
-                          className="col-span-3 text-center text-xs text-slate-400"
+                          className="col-span-2 text-center text-xs text-slate-400"
                         >
                           ↓+
                         </button>

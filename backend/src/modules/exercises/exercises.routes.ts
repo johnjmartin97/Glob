@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { db } from '../../db/client';
-import { exercises, templateExercises } from '../../db/schema/index';
+import { exercises, templateExercises, userExerciseSettings } from '../../db/schema/index';
 import { requireAuth } from '../../middleware/requireAuth';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors';
@@ -35,6 +35,13 @@ const updateExerciseSchema = z.object({
   weightUnit: z.enum(WEIGHT_UNITS).optional(),
 });
 
+// Per-user logging preferences for any exercise (incl. shared system exercises).
+const updateExerciseSettingsSchema = z.object({
+  weightUnit: z.enum(WEIGHT_UNITS).optional(),
+  logRpe: z.boolean().optional(),
+  logVelocity: z.boolean().optional(),
+});
+
 const listQuerySchema = z.object({
   category: z.enum(EXERCISE_CATEGORIES).optional(),
 });
@@ -54,7 +61,12 @@ exercisesRouter.get(
       orderBy: (table, { asc }) => [asc(table.name)],
     });
 
-    res.json(rows.map(toExerciseDto));
+    const overrides = await db.query.userExerciseSettings.findMany({
+      where: eq(userExerciseSettings.userId, req.userId),
+    });
+    const overrideByExercise = new Map(overrides.map((o) => [o.exerciseId, o]));
+
+    res.json(rows.map((row) => toExerciseDto(row, overrideByExercise.get(row.id))));
   }),
 );
 
@@ -94,6 +106,39 @@ exercisesRouter.patch(
       .returning();
 
     res.json(toExerciseDto(updated!));
+  }),
+);
+
+// Upsert the current user's per-exercise logging preferences. Works for system
+// exercises too, since it never mutates the shared exercise row.
+exercisesRouter.put(
+  '/:id/settings',
+  asyncHandler(async (req, res) => {
+    const body = updateExerciseSettingsSchema.parse(req.body);
+
+    const exercise = await db.query.exercises.findFirst({
+      where: eq(exercises.id, req.params.id!),
+    });
+    if (!exercise || (!exercise.isSystem && exercise.userId !== req.userId)) {
+      throw new NotFoundError('Exercise not found');
+    }
+
+    const fields = {
+      ...(body.weightUnit !== undefined ? { weightUnit: body.weightUnit } : {}),
+      ...(body.logRpe !== undefined ? { logRpe: body.logRpe } : {}),
+      ...(body.logVelocity !== undefined ? { logVelocity: body.logVelocity } : {}),
+    };
+
+    const [override] = await db
+      .insert(userExerciseSettings)
+      .values({ userId: req.userId, exerciseId: exercise.id, ...fields })
+      .onConflictDoUpdate({
+        target: [userExerciseSettings.userId, userExerciseSettings.exerciseId],
+        set: { ...fields, updatedAt: new Date() },
+      })
+      .returning();
+
+    res.json(toExerciseDto(exercise, override));
   }),
 );
 

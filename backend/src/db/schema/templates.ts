@@ -18,6 +18,7 @@ export const workoutTemplates = pgTable('workout_templates', {
     .references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   notes: text('notes'),
+  source: text('source').notNull().default('manual'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -41,7 +42,9 @@ export const templateExercises = pgTable('template_exercises', {
   warmupSetCount: integer('warmup_set_count'),
   warmupPercentages: numeric('warmup_percentages', { precision: 5, scale: 2 }).array(),
   warmupRepsPerSet: integer('warmup_reps_per_set').array(),
-  setsConfig: json('sets_config').$type<Array<{ loadKg: number | null; reps: number | null }>>(),
+  setsConfig: json('sets_config').$type<
+    Array<{ loadKg: number | null; reps: number | null; rpe: number | null; velocityMps: number | null }>
+  >(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

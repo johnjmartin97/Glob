@@ -24,7 +24,12 @@ export interface TemplateExerciseInput {
   warmupSetCount: number | null;
   warmupPercentages: number[] | null;
   warmupRepsPerSet: number[] | null;
-  setsConfig: Array<{ loadKg: number | null; reps: number | null }> | null;
+  setsConfig: Array<{
+    loadKg: number | null;
+    reps: number | null;
+    rpe: number | null;
+    velocityMps: number | null;
+  }> | null;
 }
 
 export interface TemplateInput {

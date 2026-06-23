@@ -64,6 +64,34 @@
       "when": 1781628779024,
       "tag": "0008_salty_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782150823170,
+      "tag": "0009_even_justice",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782176944976,
+      "tag": "0010_thin_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782232200757,
+      "tag": "0011_classy_kat_farrell",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782233683261,
+      "tag": "0012_productive_black_cat",
+      "breakpoints": true
     }
   ]
 }

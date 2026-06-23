@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { exercises, templateExercises, workoutTemplates } from '../../db/schema/index';
 import { requireAuth } from '../../middleware/requireAuth';
@@ -28,6 +28,8 @@ const templateExerciseSchema = z.object({
   setsConfig: z.array(z.object({
     loadKg: z.number().min(0).nullable(),
     reps: z.number().int().min(0).nullable(),
+    rpe: z.number().min(0).max(10).nullable().optional(),
+    velocityMps: z.number().min(0).max(5).nullable().optional(),
   })).min(1).nullable().optional(),
 });
 
@@ -39,6 +41,25 @@ const templateSchema = z.object({
 
 function toNumericString(value: number | null | undefined): string | null {
   return value == null ? null : value.toString();
+}
+
+type SetConfigInput = {
+  loadKg: number | null;
+  reps: number | null;
+  rpe?: number | null;
+  velocityMps?: number | null;
+};
+
+// Fills in optional rpe/velocityMps so stored setsConfig always matches the full entry shape.
+function normalizeSetsConfig(setsConfig: SetConfigInput[] | null | undefined) {
+  return setsConfig
+    ? setsConfig.map((s) => ({
+        loadKg: s.loadKg,
+        reps: s.reps,
+        rpe: s.rpe ?? null,
+        velocityMps: s.velocityMps ?? null,
+      }))
+    : null;
 }
 
 async function loadFullTemplate(templateId: string) {
@@ -69,7 +90,7 @@ templatesRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const templates = await db.query.workoutTemplates.findMany({
-      where: eq(workoutTemplates.userId, req.userId),
+      where: and(eq(workoutTemplates.userId, req.userId), eq(workoutTemplates.source, 'manual')),
       orderBy: (table, { desc }) => [desc(table.updatedAt)],
     });
 
@@ -120,7 +141,7 @@ templatesRouter.post(
             warmupSetCount: ex.warmupSetCount ?? null,
             warmupPercentages: ex.warmupPercentages?.map((p) => p.toString()) ?? null,
             warmupRepsPerSet: ex.warmupRepsPerSet ?? null,
-            setsConfig: ex.setsConfig ?? null,
+            setsConfig: normalizeSetsConfig(ex.setsConfig),
           })),
         );
       }
@@ -182,7 +203,7 @@ templatesRouter.put(
             warmupSetCount: ex.warmupSetCount ?? null,
             warmupPercentages: ex.warmupPercentages?.map((p) => p.toString()) ?? null,
             warmupRepsPerSet: ex.warmupRepsPerSet ?? null,
-            setsConfig: ex.setsConfig ?? null,
+            setsConfig: normalizeSetsConfig(ex.setsConfig),
           })),
         );
       }

@@ -6,7 +6,7 @@ import {
   useCreateExercise,
   useDeleteExercise,
   useExercises,
-  useUpdateExercise,
+  useUpdateExerciseSettings,
 } from '../api/exercises';
 import { ApiError } from '../api/client';
 import { SwipeToDelete } from '../components/SwipeToDelete';
@@ -14,7 +14,7 @@ import { SwipeToDelete } from '../components/SwipeToDelete';
 export function ExercisesPage() {
   const { data: exercises, isLoading } = useExercises();
   const createExercise = useCreateExercise();
-  const updateExercise = useUpdateExercise();
+  const updateSettings = useUpdateExerciseSettings();
   const deleteExercise = useDeleteExercise();
 
   const [name, setName] = useState('');
@@ -45,7 +45,7 @@ export function ExercisesPage() {
   async function handleToggleUnit(id: string, current: WeightUnit) {
     const next: WeightUnit = current === 'kg' ? 'lb' : 'kg';
     try {
-      await updateExercise.mutateAsync({ id, weightUnit: next });
+      await updateSettings.mutateAsync({ id, weightUnit: next });
     } catch {
       // ignore — UI will revert via query invalidation
     }
@@ -122,7 +122,7 @@ export function ExercisesPage() {
                         <span>{ex.name}</span>
                         <button
                           onClick={() => handleToggleUnit(ex.id, ex.weightUnit)}
-                          disabled={updateExercise.isPending}
+                          disabled={updateSettings.isPending}
                           className="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300 disabled:opacity-50"
                         >
                           {ex.weightUnit}
@@ -134,7 +134,7 @@ export function ExercisesPage() {
                           <span>{ex.name}</span>
                           <button
                             onClick={() => handleToggleUnit(ex.id, ex.weightUnit)}
-                            disabled={updateExercise.isPending}
+                            disabled={updateSettings.isPending}
                             className="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300 disabled:opacity-50"
                           >
                             {ex.weightUnit}

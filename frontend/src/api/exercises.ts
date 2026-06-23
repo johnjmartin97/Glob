@@ -41,6 +41,24 @@ export function useUpdateExercise() {
   });
 }
 
+export interface ExerciseSettingsInput {
+  weightUnit?: WeightUnit;
+  logRpe?: boolean;
+  logVelocity?: boolean;
+}
+
+export function useUpdateExerciseSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string } & ExerciseSettingsInput) =>
+      api.put<Exercise>(`/exercises/${id}/settings`, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['exercises'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+}
+
 export function useDeleteExercise() {
   const queryClient = useQueryClient();
   return useMutation({

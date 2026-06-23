@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { generateSessionSets } from '@glob/shared';
 import { db } from '../../db/client';
 import {
@@ -8,6 +8,7 @@ import {
   sessionExercises,
   sessionSets,
   templateExercises,
+  userExerciseSettings,
   workoutSessions,
   workoutTemplates,
 } from '../../db/schema/index';
@@ -44,14 +45,19 @@ const addSetSchema = z.object({
   setType: z.enum(['warmup', 'working']).default('working'),
   prescribedReps: z.number().int().min(0).nullable().optional(),
   prescribedLoadKg: z.number().min(0).nullable().optional(),
+  prescribedRpe: z.number().min(0).max(10).nullable().optional(),
+  prescribedVelocityMps: z.number().min(0).max(5).nullable().optional(),
 });
 
 const updateSetSchema = z.object({
   prescribedReps: z.number().int().min(0).nullable().optional(),
   prescribedLoadKg: z.number().min(0).nullable().optional(),
+  prescribedRpe: z.number().min(0).max(10).nullable().optional(),
+  prescribedVelocityMps: z.number().min(0).max(5).nullable().optional(),
   actualWeightKg: z.number().min(0).nullable().optional(),
   actualReps: z.number().int().min(0).nullable().optional(),
   actualRpe: z.number().min(0).max(10).nullable().optional(),
+  actualVelocityMps: z.number().min(0).max(5).nullable().optional(),
   completed: z.boolean().optional(),
 });
 
@@ -73,6 +79,16 @@ async function loadFullSession(sessionId: string) {
     : [];
   const exerciseById = new Map(exerciseLookup.map((e) => [e.id, e]));
 
+  const overrideRows = exerciseIds.length
+    ? await db.query.userExerciseSettings.findMany({
+        where: and(
+          eq(userExerciseSettings.userId, session.userId),
+          inArray(userExerciseSettings.exerciseId, exerciseIds),
+        ),
+      })
+    : [];
+  const overrideByExercise = new Map(overrideRows.map((o) => [o.exerciseId, o]));
+
   const sessionExerciseIds = exerciseRows.map((row) => row.id);
   const setRows = sessionExerciseIds.length
     ? await db.query.sessionSets.findMany({
@@ -91,6 +107,7 @@ async function loadFullSession(sessionId: string) {
     exerciseRows.map((row) => ({
       ...row,
       exercise: exerciseById.get(row.exerciseId),
+      exerciseSettings: overrideByExercise.get(row.exerciseId),
       sets: setsByExercise.get(row.id) ?? [],
     })),
   );
@@ -222,6 +239,8 @@ sessionsRouter.post(
               setType: set.setType,
               prescribedReps: set.prescribedReps,
               prescribedLoadKg: toNumericString(set.prescribedLoadKg),
+              prescribedRpe: toNumericString(set.prescribedRpe),
+              prescribedVelocityMps: toNumericString(set.prescribedVelocityMps),
             })),
           );
         }
@@ -334,6 +353,8 @@ sessionsRouter.post(
       setType: body.setType,
       prescribedReps: body.prescribedReps ?? null,
       prescribedLoadKg: toNumericString(body.prescribedLoadKg),
+      prescribedRpe: toNumericString(body.prescribedRpe),
+      prescribedVelocityMps: toNumericString(body.prescribedVelocityMps),
     });
 
     res.status(201).json(await loadFullSession(session.id));
@@ -360,11 +381,20 @@ sessionsRouter.patch(
         ...(body.prescribedLoadKg !== undefined
           ? { prescribedLoadKg: toNumericString(body.prescribedLoadKg) }
           : {}),
+        ...(body.prescribedRpe !== undefined
+          ? { prescribedRpe: toNumericString(body.prescribedRpe) }
+          : {}),
+        ...(body.prescribedVelocityMps !== undefined
+          ? { prescribedVelocityMps: toNumericString(body.prescribedVelocityMps) }
+          : {}),
         ...(body.actualWeightKg !== undefined
           ? { actualWeightKg: toNumericString(body.actualWeightKg) }
           : {}),
         ...(body.actualReps !== undefined ? { actualReps: body.actualReps } : {}),
         ...(body.actualRpe !== undefined ? { actualRpe: toNumericString(body.actualRpe) } : {}),
+        ...(body.actualVelocityMps !== undefined
+          ? { actualVelocityMps: toNumericString(body.actualVelocityMps) }
+          : {}),
         ...(body.completed !== undefined ? { completed: body.completed, completedAt } : {}),
         updatedAt: new Date(),
       })

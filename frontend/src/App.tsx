@@ -19,6 +19,10 @@ import { SupplementsPage } from './routes/SupplementsPage';
 import { MorePage } from './routes/MorePage';
 import { SleepPage } from './routes/SleepPage';
 import { SettingsPage } from './routes/SettingsPage';
+import { CoachPage } from './routes/CoachPage';
+import { GeneratePlanPage } from './routes/GeneratePlanPage';
+import { PlanDetailPage } from './routes/PlanDetailPage';
+import { PlanHistoryPage } from './routes/PlanHistoryPage';
 
 const queryClient = new QueryClient();
 
@@ -34,6 +38,10 @@ export function App() {
               <Route element={<Layout />}>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/train" element={<TrainHomePage />} />
+                <Route path="/coach" element={<CoachPage />} />
+                <Route path="/coach/generate" element={<GeneratePlanPage />} />
+                <Route path="/coach/plans" element={<PlanHistoryPage />} />
+                <Route path="/coach/plans/:id" element={<PlanDetailPage />} />
                 <Route path="/templates" element={<TemplatesPage />} />
                 <Route path="/templates/new" element={<TemplateEditorPage />} />
                 <Route path="/templates/:id/edit" element={<TemplateEditorPage />} />

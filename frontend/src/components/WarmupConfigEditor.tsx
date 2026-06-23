@@ -3,6 +3,7 @@ import {
   calculateWarmupSets,
   DEFAULT_WARMUP_PERCENTAGES,
   DEFAULT_WARMUP_REPS,
+  defaultWarmupRepsForIndex,
   formatWeight,
 } from '@glob/shared';
 import type { WeightUnit } from '@glob/shared';
@@ -34,11 +35,11 @@ export function WarmupConfigEditor({
 }: WarmupConfigEditorProps) {
   const count = setCount ?? DEFAULT_WARMUP_PERCENTAGES.length;
   const pcts = percentages ?? DEFAULT_WARMUP_PERCENTAGES;
-  const reps = repsPerSet ?? Array.from({ length: count }, () => DEFAULT_WARMUP_REPS);
+  const reps = repsPerSet ?? Array.from({ length: count }, (_, i) => defaultWarmupRepsForIndex(i));
 
   function setCountTo(next: number) {
     const nextPcts = Array.from({ length: next }, (_, i) => pcts[i] ?? pcts[pcts.length - 1] ?? 50);
-    const nextReps = Array.from({ length: next }, (_, i) => reps[i] ?? DEFAULT_WARMUP_REPS);
+    const nextReps = Array.from({ length: next }, (_, i) => reps[i] ?? defaultWarmupRepsForIndex(i));
     onChange({ warmupSetCount: next, warmupPercentages: nextPcts, warmupRepsPerSet: nextReps });
   }
 
@@ -49,7 +50,7 @@ export function WarmupConfigEditor({
   }
 
   function setReps(index: number, value: number) {
-    const next = Array.from({ length: count }, (_, i) => reps[i] ?? DEFAULT_WARMUP_REPS);
+    const next = Array.from({ length: count }, (_, i) => reps[i] ?? defaultWarmupRepsForIndex(i));
     next[index] = value;
     onChange({ warmupRepsPerSet: next });
   }
@@ -109,7 +110,7 @@ export function WarmupConfigEditor({
                   />
                   <input
                     type="number"
-                    value={reps[i] ?? DEFAULT_WARMUP_REPS}
+                    value={reps[i] ?? defaultWarmupRepsForIndex(i)}
                     min={1}
                     max={20}
                     onChange={(e) => setReps(i, Number(e.target.value))}

@@ -14,9 +14,12 @@ export interface SessionSummary {
 export interface SetUpdateInput {
   prescribedReps?: number | null;
   prescribedLoadKg?: number | null;
+  prescribedRpe?: number | null;
+  prescribedVelocityMps?: number | null;
   actualWeightKg?: number | null;
   actualReps?: number | null;
   actualRpe?: number | null;
+  actualVelocityMps?: number | null;
   completed?: boolean;
 }
 
@@ -105,6 +108,18 @@ export function useAddSessionExercise(sessionId: string) {
       api.post<WorkoutSession>(`/sessions/${sessionId}/exercises`, input),
     onSuccess: (data) => {
       queryClient.setQueryData(['sessions', sessionId], data);
+    },
+  });
+}
+
+export function useDeleteSessionExercise(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (exerciseId: string) =>
+      api.delete<void>(`/sessions/${sessionId}/exercises/${exerciseId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
   });
 }
