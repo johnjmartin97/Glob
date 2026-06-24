@@ -1,15 +1,20 @@
-import { ApiError, FinishReason, GoogleGenAI } from '@google/genai';
-// z.toJSONSchema() — used below to derive Gemini's responseJsonSchema from these schemas — only
-// exists on the zod/v4 compat API (ships inside zod 3.25+), not the regular `zod` v3 import used
-// elsewhere in this codebase. Only this file needs the v4 import.
+import OpenAI from 'openai';
 import { z } from 'zod/v4';
 import type { ExerciseCategory, ReadinessSnapshot } from '@glob/shared';
 import { env } from '../../config/env';
 import { HttpError } from '../../utils/errors';
 
-export const COACH_MODEL = 'gemini-2.5-flash';
+export const COACH_MODEL = env.LLM_MODEL;
 
-const client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+// OpenAI-compatible client; points at Groq's free tier by default (LLM_BASE_URL).
+// maxRetries gives exponential backoff on 429/5xx (honoring Retry-After) — the main fix for the
+// previous "overloaded" failures, which had no retry at all.
+const client = new OpenAI({
+  apiKey: env.LLM_API_KEY,
+  baseURL: env.LLM_BASE_URL,
+  maxRetries: 4,
+  timeout: 180_000,
+});
 
 export class LlmResponseError extends HttpError {
   constructor(message = "Coach couldn't generate a plan from that request — please try again") {
@@ -24,7 +29,7 @@ const LlmSetSchema = z.object({
   reps: z.number().int().min(1).max(100),
   loadKg: z.number().min(0).nullable(),
   loadPct: z.number().min(0).max(100).nullable(),
-  targetRpe: z.number().min(1).max(10).nullable(),
+  targetRpe: z.number().min(1).max(10).nullable().optional(),
   isWarmup: z.boolean(),
 });
 
@@ -87,7 +92,7 @@ All readiness numbers you receive (training load, RPE trend, sleep, nutrition) a
 
 Prescribe exercises using EXACTLY the names from the provided exercise list whenever a suitable match exists. Only introduce a new exercise name when nothing in the list fits (e.g. a specific accessory movement), and pick the most accurate category for it.
 
-Respond with a complete multi-week training program matching the required schema. Do not include any prose outside the structured response.`;
+Respond with a complete multi-week training program matching the required schema, as a single raw JSON object. Do not include any prose, markdown, or code fences outside the JSON object.`;
 
 export interface GeneratePlanInput {
   readiness: ReadinessSnapshot;
@@ -124,12 +129,12 @@ function buildUserPrompt(input: GeneratePlanInput): string {
     `User request: goal="${goal}", durationWeeks=${durationWeeks}, daysPerWeek=${daysPerWeek}.`,
     '',
     'Readiness snapshot (pre-computed from real logs — ground truth, do not contradict):',
-    JSON.stringify(readiness, null, 2),
+    JSON.stringify(readiness),
     '',
     caveats.length ? `Data gaps to account for:\n- ${caveats.join('\n- ')}` : '',
     '',
     'Available exercises (use these names/categories whenever a suitable one exists):',
-    JSON.stringify(availableExercises, null, 2),
+    JSON.stringify(availableExercises),
     '',
     'How to use recentExercisePerformance for progressive overload:',
     "- For each prescribed lift, check whether it (or a close substitute) appears in recentExercisePerformance. If so, treat its recentSets as a short trend (most recent first), not just a single data point, and anchor your prescribed loadKg/loadPct and target RPE on that trend rather than guessing.",
@@ -138,121 +143,117 @@ function buildUserPrompt(input: GeneratePlanInput): string {
     '- If velocityMps is null for the relevant sets (the common case), base the progression decision on RPE and reps alone — do not treat a missing velocity reading as a meaningful signal of its own.',
     '- If a lift has no entry in recentExercisePerformance (new exercise, or an accessory not recently logged), prescribe a sensible conservative starting load/RPE for that lift type and the stated goal instead of inventing a fabricated history.',
     '',
-    `Produce exactly ${durationWeeks} week(s) and exactly ${daysPerWeek} session(s) per week, with sensible periodization toward the stated goal. The response schema cannot enforce numeric ranges, so follow these rules exactly:`,
+    'Return ONLY a single JSON object of EXACTLY this shape (no extra keys, no markdown):',
+    '{"overallRationale": string, "weeks": [{"weekIndex": int, "focus": string|null, "rationale": string|null, "sessions": [{"dayIndex": int, "label": string, "rationale": string|null, "exercises": [{"exerciseName": string, "category": "squat"|"bench"|"deadlift"|"overhead_press"|"accessory"|"other", "orderIndex": int, "notes": string|null, "sets": [{"setIndex": int, "reps": int, "loadKg": number|null, "loadPct": number|null, "targetRpe": number|null, "isWarmup": boolean}]}]}]}]}',
+    '',
+    `Produce exactly ${durationWeeks} week(s) and exactly ${daysPerWeek} session(s) per week, with sensible periodization toward the stated goal. Follow these rules exactly:`,
     `- weekIndex is the sequential position of the week: 0, 1, 2, ... up to ${durationWeeks - 1}, with no gaps or repeats.`,
     `- dayIndex is the sequential position of the session WITHIN its week: 0, 1, 2, ... up to ${daysPerWeek - 1}, with no gaps or repeats. This is the session's order, not a day-of-the-week label — do not skip numbers for rest days; rest days simply aren't represented.`,
     '- Each set\'s reps must be a whole number from 1 to 100. Prefer multiple sets over one set with an extreme rep count.',
-    '- Each set\'s loadPct (percent of that exercise\'s working load) must be from 0 to 100; loadKg, if given instead, must be 0 or greater.',
-    '- targetRpe is the prescribed effort (1-10) for each WORKING set, anchored on the RPE-progression guidance above (typically ~7-8 for moderate-rep work, up to ~9 near a peak). Set targetRpe to null for warmup sets.',
-    '- Do NOT prescribe target velocities: the app derives each working set\'s target bar speed (m/s) from the loadPct you assign using the user\'s velocity profile. Just give an accurate loadPct (or loadKg) and targetRpe.',
+    '- For the MAIN barbell lifts (categories squat, bench, deadlift): prescribe reps and targetRpe ONLY — the app computes the actual kg load from the lifter\'s estimated 1RM and your reps/RPE, so do NOT try to set loadKg/loadPct for them (any value you give is ignored). Drive the periodization for these lifts through reps and targetRpe (e.g. wave RPE up week to week, or lower reps as intensity rises).',
+    '- For ACCESSORY/other working sets: give loadPct (percent of that exercise\'s working load, a number 0-100, e.g. 90 for 90%, NOT 0.9) or loadKg (0 or greater), plus targetRpe when you can.',
+    '- targetRpe is the prescribed effort (1-10) for each WORKING set, anchored on the RPE-progression guidance above (typically ~7-8 for moderate-rep work, up to ~9 near a peak). ALWAYS set targetRpe for every working set of the main barbell lifts; it is strongly preferred on accessory working sets too. Set targetRpe to null for warmup sets.',
+    '- Do NOT prescribe target velocities: the app derives each working set\'s target bar speed (m/s) itself.',
     '- setIndex within an exercise starts at 0 and increases by 1 per set, in the order the sets are performed.',
   ].join('\n');
 }
 
-// Gemini's responseJsonSchema accepts a real (if restricted) JSON Schema subset, but not string
-// Gemini's constrained-decoding schema doesn't support string length constraints at all, and
-// chokes ("too many states for serving") on numeric min/max and array min/maxItems once they're
-// nested several levels deep — which ours are (weeks -> sessions -> exercises -> sets). Strip all
-// of those from what's SENT upstream; the full Zod schema (bounds included) still validates the
-// response below, so nothing is actually loosened — only the request-time schema is simplified.
-const UNSUPPORTED_GEMINI_SCHEMA_KEYWORDS = new Set([
-  'minLength',
-  'maxLength',
-  'minimum',
-  'maximum',
-  'minItems',
-  'maxItems',
-  '$schema',
-]);
-
-function stripUnsupportedJsonSchemaKeywords(node: unknown): unknown {
-  if (Array.isArray(node)) {
-    return node.map(stripUnsupportedJsonSchemaKeywords);
-  }
-  if (node && typeof node === 'object') {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-      if (UNSUPPORTED_GEMINI_SCHEMA_KEYWORDS.has(key)) continue;
-      result[key] = stripUnsupportedJsonSchemaKeywords(value);
-    }
-    return result;
-  }
-  return node;
+/** Truncates long model output for logging: keeps the head and tail. */
+function snippet(text: string, max = 500): string {
+  if (text.length <= max * 2) return text;
+  return `${text.slice(0, max)} …[${text.length - max * 2} chars omitted]… ${text.slice(-max)}`;
 }
 
-const GEMINI_RESPONSE_JSON_SCHEMA = stripUnsupportedJsonSchemaKeywords(z.toJSONSchema(LlmPlanResponseSchema));
+function logLlmFailure(stage: string, details: Record<string, unknown>): void {
+  console.error(`[coach.llm] plan generation failed at ${stage}`, details);
+}
 
-function throwForApiError(err: ApiError): never {
-  if (err.status === 503 || err.status === 429) {
-    throw new LlmResponseError(
-      "Coach's AI provider (Gemini free tier) is temporarily overloaded — please try again in a minute.",
-    );
+const MAX_VALIDATION_ATTEMPTS = 3;
+
+/** One streamed completion. The SDK's maxRetries handles transient 429/5xx with backoff. */
+async function requestPlanOnce(
+  input: GeneratePlanInput,
+): Promise<{ text: string; finishReason: string | null | undefined }> {
+  let text = '';
+  let finishReason: string | null | undefined;
+  const stream = await client.chat.completions.create({
+    model: COACH_MODEL,
+    stream: true,
+    // Groq counts max_completion_tokens toward the per-minute token limit (llama-3.3-70b = 12K TPM),
+    // so keep prompt + completion under the free-tier ceiling.
+    max_completion_tokens: 8000,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: buildUserPrompt(input) },
+    ],
+    // JSON mode (not strict json_schema): the higher-TPM free models support this, and the Zod schema
+    // below validates the shape. App-level retry covers the occasional non-conforming response.
+    response_format: { type: 'json_object' },
+  });
+  for await (const chunk of stream) {
+    text += chunk.choices[0]?.delta?.content ?? '';
+    finishReason = chunk.choices[0]?.finish_reason ?? finishReason;
   }
-  throw new LlmResponseError(`Coach's AI provider failed: ${err.message}`);
+  return { text, finishReason };
 }
 
 export async function generateTrainingPlan(input: GeneratePlanInput): Promise<LlmPlanResponse> {
-  // A multi-week plan is a large enough generation that a single blocking generateContent() call
-  // can exceed Gemini's server-side deadline (surfaces as a 504 DEADLINE_EXCEEDED), independent of
-  // our own client-side timeout. Streaming avoids that single-round-trip deadline entirely.
-  //
-  // Use our own AbortController rather than httpOptions.timeout: the latter's internal timer isn't
-  // reliably cleared once the stream finishes, so it can fire afterward and throw an uncaught error
-  // from outside this function's try/catch. clearTimeout() in the finally block prevents that.
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 180_000);
-
-  let text = '';
-  let finishReason: FinishReason | undefined;
-  try {
-    const stream = await client.models.generateContentStream({
-      model: COACH_MODEL,
-      contents: buildUserPrompt(input),
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-        responseJsonSchema: GEMINI_RESPONSE_JSON_SCHEMA,
-        thinkingConfig: { thinkingBudget: -1 },
-        abortSignal: controller.signal,
-      },
-    });
-
-    for await (const chunk of stream) {
-      text += chunk.text ?? '';
-      finishReason = chunk.candidates?.[0]?.finishReason ?? finishReason;
+  for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
+    let text = '';
+    let finishReason: string | null | undefined;
+    try {
+      ({ text, finishReason } = await requestPlanOnce(input));
+    } catch (err) {
+      if (err instanceof OpenAI.APIError) {
+        const status = err.status;
+        if (status === 429 || status === 503 || (status != null && status >= 500)) {
+          throw new LlmResponseError(
+            "Coach's AI provider is temporarily overloaded — please try again in a minute.",
+          );
+        }
+      }
+      throw new LlmResponseError(
+        `Coach's AI provider failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
-  } catch (err) {
-    if (err instanceof ApiError) {
-      throwForApiError(err);
+
+    // Truncation won't fix itself on retry — fail fast with an actionable message.
+    if (finishReason === 'length') {
+      logLlmFailure('truncated (length)', { finishReason, textLength: text.length, text: snippet(text) });
+      throw new LlmResponseError(
+        "Coach couldn't generate a plan for that request — try a shorter duration or fewer days per week.",
+      );
     }
-    throw new LlmResponseError(
-      `Coach's AI provider failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  } finally {
-    clearTimeout(timeoutId);
+
+    const last = attempt === MAX_VALIDATION_ATTEMPTS;
+
+    if (!text) {
+      logLlmFailure('empty response', { finishReason, attempt });
+      if (last) throw new LlmResponseError();
+      continue;
+    }
+
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(text);
+    } catch (err) {
+      logLlmFailure('JSON parse', {
+        error: err instanceof Error ? err.message : String(err),
+        textLength: text.length,
+        text: snippet(text),
+        attempt,
+      });
+      if (last) throw new LlmResponseError();
+      continue;
+    }
+
+    const result = LlmPlanResponseSchema.safeParse(parsedJson);
+    if (result.success) return result.data;
+
+    logLlmFailure('schema validation', { issues: result.error.issues, text: snippet(text), attempt });
+    if (last) throw new LlmResponseError();
   }
 
-  if (finishReason && finishReason !== FinishReason.STOP) {
-    throw new LlmResponseError(
-      "Coach couldn't generate a plan for that request — try adjusting your goal or duration.",
-    );
-  }
-
-  if (!text) {
-    throw new LlmResponseError();
-  }
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(text);
-  } catch {
-    throw new LlmResponseError();
-  }
-
-  const result = LlmPlanResponseSchema.safeParse(parsedJson);
-  if (!result.success) {
-    throw new LlmResponseError();
-  }
-
-  return result.data;
+  // Unreachable (the loop either returns or throws on the last attempt), but satisfies the type checker.
+  throw new LlmResponseError();
 }

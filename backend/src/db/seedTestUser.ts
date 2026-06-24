@@ -10,6 +10,7 @@ import {
 } from '@glob/shared';
 import { sql, db } from './client';
 import {
+  coachingPlans,
   exercises,
   foodItems,
   foodLogEntries,
@@ -23,6 +24,7 @@ import {
   users,
   userSettings,
   workoutSessions,
+  workoutTemplates,
 } from './schema/index';
 import { hashPassword } from '../utils/password';
 
@@ -239,8 +241,15 @@ async function main() {
   const counts = { sessions: 0, sets: 0, foodLogs: 0, sleepLogs: 0, supplementLogs: 0 };
 
   await db.transaction(async (tx) => {
-    // Fresh start: cascade-deletes all of this user's data.
-    await tx.delete(users).where(eq(users.email, EMAIL));
+    // Fresh start. Delete coaching plans and templates first: their template_exercises reference
+    // user-owned (AI-created) exercises via a non-cascading FK, so they must go before the user
+    // delete cascades those exercises away.
+    const existing = await tx.query.users.findFirst({ where: eq(users.email, EMAIL) });
+    if (existing) {
+      await tx.delete(coachingPlans).where(eq(coachingPlans.userId, existing.id));
+      await tx.delete(workoutTemplates).where(eq(workoutTemplates.userId, existing.id));
+      await tx.delete(users).where(eq(users.id, existing.id));
+    }
 
     const passwordHash = await hashPassword(PASSWORD);
     const [user] = await tx

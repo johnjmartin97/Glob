@@ -1,7 +1,8 @@
-import { pgTable, uuid, text, integer, date, json, timestamp, unique, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, numeric, date, json, timestamp, unique, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { ReadinessSnapshot } from '@glob/shared';
 import { users } from './users';
+import { exercises } from './exercises';
 import { workoutTemplates } from './templates';
 import { workoutSessions } from './sessions';
 
@@ -70,4 +71,22 @@ export const coachingPlanSessions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique().on(table.weekId, table.dayIndex)],
+);
+
+// Per-plan running estimate of each main lift's 1RM, used to autoregulate the loads of
+// upcoming sessions from the lifter's actual performance.
+export const coachingPlanLifts = pgTable(
+  'coaching_plan_lifts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => coachingPlans.id, { onDelete: 'cascade' }),
+    exerciseId: uuid('exercise_id')
+      .notNull()
+      .references(() => exercises.id, { onDelete: 'cascade' }),
+    estimated1rmKg: numeric('estimated_1rm_kg', { precision: 6, scale: 2 }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.planId, table.exerciseId)],
 );

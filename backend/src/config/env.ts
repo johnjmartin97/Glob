@@ -15,7 +15,10 @@ const envSchema = z.object({
     .transform((v) => Number.parseInt(v, 10)),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   USDA_API_KEY: z.string().default('DEMO_KEY'),
-  GEMINI_API_KEY: z.string().min(1),
+  // Coach LLM provider (OpenAI-compatible). Defaults to Groq's free tier.
+  LLM_API_KEY: z.string().min(1),
+  LLM_BASE_URL: z.string().default('https://api.groq.com/openai/v1'),
+  LLM_MODEL: z.string().default('llama-3.3-70b-versatile'),
 });
 
 export const env = envSchema.parse(process.env);

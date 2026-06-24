@@ -9,6 +9,9 @@ export type ExerciseCategory =
   | 'accessory'
   | 'other';
 
+// The competition lifts the coach prescribes velocity for (and autoregulates).
+export const MAIN_LIFT_CATEGORIES: ExerciseCategory[] = ['squat', 'bench', 'deadlift'];
+
 export type SetType = 'warmup' | 'working';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 

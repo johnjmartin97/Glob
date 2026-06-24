@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import {
   DEFAULT_LOAD_VELOCITY_PROFILES,
+  DEFAULT_WARMUP_PERCENTAGES,
+  DEFAULT_WARMUP_REPS_PER_SET,
+  loadPctFromRepsRpe,
+  MAIN_LIFT_CATEGORIES,
   roundToNearestIncrement,
   targetVelocityForLoadPct,
   type ExerciseCategory,
@@ -10,6 +14,7 @@ import {
 import type { CoachingPlanDetail, CoachingPlanSessionDetail } from '@glob/shared';
 import { db } from '../../db/client';
 import {
+  coachingPlanLifts,
   coachingPlanSessions,
   coachingPlanWeeks,
   coachingPlans,
@@ -188,6 +193,20 @@ coachRouter.post(
         })
         .returning();
 
+      // Track each main lift's prescribed e1RM (fallback baseline for autoregulation).
+      const mainLiftInfo = new Map<string, { name: string; prescribedE1rm: number }>();
+
+      // The lifter's current estimated 1RM per lift, from their most recent logged top set. Used to
+      // compute main-lift loads in code (LLMs are unreliable at load↔reps↔RPE math) and to seed
+      // coachingPlanLifts below.
+      const recentByName = new Map(
+        readiness.recentExercisePerformance.map((p) => [p.exerciseName.trim().toLowerCase(), p]),
+      );
+      function recentE1rmFor(key: string): number | null {
+        const recent = recentByName.get(key)?.recentSets[0];
+        return recent != null ? recent.weightKg / (loadPctFromRepsRpe(recent.reps, recent.rpe ?? 8) / 100) : null;
+      }
+
       for (const week of llmResponse.weeks) {
         const [weekRow] = await tx
           .insert(coachingPlanWeeks)
@@ -230,32 +249,80 @@ coachRouter.post(
             const workingSets = exercise.sets.filter((s) => !s.isWarmup).sort((a, b) => a.setIndex - b.setIndex);
             const firstWorkingLoadKg = workingSets[0]?.loadKg ?? null;
 
-            const warmupEnabled = warmupSets.length > 0 && firstWorkingLoadKg != null;
-            const warmupPercentages = warmupEnabled
-              ? warmupSets.map((s) => {
-                  if (s.loadPct != null) return s.loadPct;
-                  if (s.loadKg != null && firstWorkingLoadKg) {
-                    return Math.round((s.loadKg / firstWorkingLoadKg) * 100);
-                  }
-                  return 50;
-                })
-              : null;
-            const warmupRepsPerSet = warmupEnabled ? warmupSets.map((s) => s.reps) : null;
-
+            const isMainLift = MAIN_LIFT_CATEGORIES.includes(exercise.category);
             const velocityProfile =
               velocityProfiles.get(key) ?? DEFAULT_LOAD_VELOCITY_PROFILES[exercise.category];
+            // The lifter's estimated 1RM for this lift (main lifts with logged history only).
+            const mainBaselineE1rm = isMainLift ? recentE1rmFor(key) : null;
+            // Main lifts (squat/bench/deadlift): prescribe reps + RPE + velocity, and compute the kg
+            // load in code as e1RM × %1RM(reps,rpe) so it's always physiologically sane (the LLM's
+            // absolute loads are unreliable). Accessories keep the LLM-provided load and no velocity.
             const setsConfig = workingSets.length
               ? workingSets.map((s) => {
-                  const loadPct = resolveSetLoadPct(s, firstWorkingLoadKg);
+                  const rpe = s.targetRpe ?? (isMainLift ? 8 : null);
+                  if (isMainLift && mainBaselineE1rm != null && rpe != null) {
+                    const loadPct = loadPctFromRepsRpe(s.reps, rpe);
+                    return {
+                      loadKg: roundToNearestIncrement((mainBaselineE1rm * loadPct) / 100, 2.5),
+                      reps: s.reps,
+                      rpe,
+                      velocityMps: round2(targetVelocityForLoadPct(loadPct, velocityProfile)),
+                    };
+                  }
+                  // Main lift with no logged baseline, or an accessory: fall back to the LLM's load.
+                  let loadPct = resolveSetLoadPct(s, firstWorkingLoadKg);
+                  if (loadPct == null && isMainLift && rpe != null) {
+                    loadPct = loadPctFromRepsRpe(s.reps, rpe);
+                  }
                   return {
                     loadKg: resolveSetLoadKg(s, firstWorkingLoadKg),
                     reps: s.reps,
-                    rpe: s.targetRpe ?? null,
+                    rpe,
                     velocityMps:
-                      loadPct == null ? null : round2(targetVelocityForLoadPct(loadPct, velocityProfile)),
+                      isMainLift && loadPct != null
+                        ? round2(targetVelocityForLoadPct(loadPct, velocityProfile))
+                        : null,
                   };
                 })
               : null;
+
+            // Warmups: main lifts get the standard ramp off their computed working load; otherwise use
+            // any LLM-provided warmup sets relative to the working load.
+            const computedWorkingLoadKg = setsConfig?.[0]?.loadKg ?? null;
+            const useDefaultWarmups = isMainLift && computedWorkingLoadKg != null;
+            const warmupEnabled = useDefaultWarmups || (warmupSets.length > 0 && firstWorkingLoadKg != null);
+            const warmupSetCount = !warmupEnabled
+              ? null
+              : useDefaultWarmups
+                ? DEFAULT_WARMUP_PERCENTAGES.length
+                : warmupSets.length;
+            const warmupPercentages = !warmupEnabled
+              ? null
+              : useDefaultWarmups
+                ? [...DEFAULT_WARMUP_PERCENTAGES]
+                : warmupSets.map((s) => {
+                    if (s.loadPct != null) return s.loadPct;
+                    if (s.loadKg != null && firstWorkingLoadKg) {
+                      return Math.round((s.loadKg / firstWorkingLoadKg) * 100);
+                    }
+                    return 50;
+                  });
+            const warmupRepsPerSet = !warmupEnabled
+              ? null
+              : useDefaultWarmups
+                ? [...DEFAULT_WARMUP_REPS_PER_SET]
+                : warmupSets.map((s) => s.reps);
+
+            if (isMainLift && setsConfig?.length) {
+              const e1rm = Math.max(
+                ...setsConfig
+                  .filter((c) => c.loadKg != null && c.reps != null && c.rpe != null)
+                  .map((c) => c.loadKg! / (loadPctFromRepsRpe(c.reps!, c.rpe!) / 100)),
+                0,
+              );
+              const prev = mainLiftInfo.get(exerciseId)?.prescribedE1rm ?? 0;
+              if (e1rm > prev) mainLiftInfo.set(exerciseId, { name: key, prescribedE1rm: e1rm });
+            }
 
             await tx.insert(templateExercises).values({
               templateId: template!.id,
@@ -266,7 +333,7 @@ coachRouter.post(
               targetLoadKg: toNumericString(setsConfig?.[0]?.loadKg ?? null),
               notes: exercise.notes,
               warmupEnabled,
-              warmupSetCount: warmupEnabled ? warmupSets.length : null,
+              warmupSetCount,
               warmupPercentages: warmupPercentages?.map((p) => p.toString()) ?? null,
               warmupRepsPerSet,
               setsConfig,
@@ -281,6 +348,17 @@ coachRouter.post(
             templateId: template!.id,
             rationale: session.rationale,
           });
+        }
+      }
+
+      // Seed per-main-lift 1RM state: prefer the lifter's recent actual top set, else the
+      // plan's prescribed top set. Used as the baseline the autoregulator scales loads against.
+      for (const [exerciseId, info] of mainLiftInfo) {
+        const e1rm = recentE1rmFor(info.name) ?? info.prescribedE1rm;
+        if (e1rm > 0) {
+          await tx
+            .insert(coachingPlanLifts)
+            .values({ planId: plan!.id, exerciseId, estimated1rmKg: toNumericString(round2(e1rm))! });
         }
       }
 

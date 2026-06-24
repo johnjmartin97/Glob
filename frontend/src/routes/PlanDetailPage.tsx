@@ -136,12 +136,19 @@ export function PlanDetailPage() {
                   </div>
                   {session.rationale && <p className="mt-1 text-sm text-slate-400">{session.rationale}</p>}
                   <ul className="mt-2 space-y-1">
-                    {session.exercises.map((exercise) => (
-                      <li key={exercise.id} className="text-sm text-slate-400">
-                        {exercise.exercise?.name ?? 'Exercise'} — {exercise.targetSets} sets
-                        {exercise.targetReps ? ` x ${exercise.targetReps} reps` : ''}
-                      </li>
-                    ))}
+                    {session.exercises.map((exercise) => {
+                      const top = exercise.setsConfig?.[0];
+                      const load = top?.loadKg ?? exercise.targetLoadKg;
+                      return (
+                        <li key={exercise.id} className="text-sm text-slate-400">
+                          {exercise.exercise?.name ?? 'Exercise'} — {exercise.targetSets} sets
+                          {exercise.targetReps ? ` x ${exercise.targetReps} reps` : ''}
+                          {load != null ? ` @ ${load} kg` : ''}
+                          {top?.rpe != null ? ` · RPE ${top.rpe}` : ''}
+                          {top?.velocityMps != null ? ` · ${top.velocityMps} m/s` : ''}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </li>
               ))}
