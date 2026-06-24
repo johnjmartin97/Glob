@@ -6,15 +6,28 @@ import { HttpError } from '../../utils/errors';
 
 export const COACH_MODEL = env.LLM_MODEL;
 
-// OpenAI-compatible client; points at Groq's free tier by default (LLM_BASE_URL).
-// maxRetries gives exponential backoff on 429/5xx (honoring Retry-After) — the main fix for the
-// previous "overloaded" failures, which had no retry at all.
+// OpenAI-compatible client; defaults to a locally-hosted Ollama model (LLM_BASE_URL), but works with
+// any OpenAI-compatible server/cloud provider. maxRetries gives exponential backoff on 429/5xx.
 const client = new OpenAI({
   apiKey: env.LLM_API_KEY,
   baseURL: env.LLM_BASE_URL,
   maxRetries: 4,
   timeout: 180_000,
 });
+
+/** Recursively strips JSON Schema keys some constrained-decoding engines reject (e.g. `$schema`). */
+function stripSchemaMeta(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripSchemaMeta);
+  if (node && typeof node === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (k === '$schema') continue;
+      out[k] = stripSchemaMeta(v);
+    }
+    return out;
+  }
+  return node;
+}
 
 export class LlmResponseError extends HttpError {
   constructor(message = "Coach couldn't generate a plan from that request — please try again") {
@@ -170,6 +183,20 @@ function logLlmFailure(stage: string, details: Record<string, unknown>): void {
 
 const MAX_VALIDATION_ATTEMPTS = 3;
 
+// json_schema turns on Ollama's constrained decoding (guaranteed-valid structure — key to making a
+// small local model reliable); json_object is the portable fallback. Either way the Zod schema below
+// still validates the semantics (ranges, week/day contiguity) the structure constraint can't enforce.
+const RESPONSE_FORMAT: OpenAI.Chat.Completions.ChatCompletionCreateParams['response_format'] =
+  env.LLM_RESPONSE_FORMAT === 'json_schema'
+    ? {
+        type: 'json_schema',
+        json_schema: {
+          name: 'training_plan',
+          schema: stripSchemaMeta(z.toJSONSchema(LlmPlanResponseSchema)) as Record<string, unknown>,
+        },
+      }
+    : { type: 'json_object' };
+
 /** One streamed completion. The SDK's maxRetries handles transient 429/5xx with backoff. */
 async function requestPlanOnce(
   input: GeneratePlanInput,
@@ -179,16 +206,14 @@ async function requestPlanOnce(
   const stream = await client.chat.completions.create({
     model: COACH_MODEL,
     stream: true,
-    // Groq counts max_completion_tokens toward the per-minute token limit (llama-3.3-70b = 12K TPM),
-    // so keep prompt + completion under the free-tier ceiling.
+    // Cap completion so prompt + output fit the model's context window (Ollama: set OLLAMA_CONTEXT_LENGTH
+    // large enough, e.g. 16384) and, on metered providers, stay under the per-minute token limit.
     max_completion_tokens: 8000,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: buildUserPrompt(input) },
     ],
-    // JSON mode (not strict json_schema): the higher-TPM free models support this, and the Zod schema
-    // below validates the shape. App-level retry covers the occasional non-conforming response.
-    response_format: { type: 'json_object' },
+    response_format: RESPONSE_FORMAT,
   });
   for await (const chunk of stream) {
     text += chunk.choices[0]?.delta?.content ?? '';
