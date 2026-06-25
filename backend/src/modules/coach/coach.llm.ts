@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import OpenAI from 'openai';
 import { z } from 'zod/v4';
 import type { ExerciseCategory, ReadinessSnapshot } from '@glob/shared';
@@ -117,6 +118,33 @@ export interface GeneratePlanInput {
   availableExercises: Array<{ name: string; category: ExerciseCategory }>;
 }
 
+// User-editable coaching wisdom, loaded per request so edits take effect without a restart. The file
+// has a shared base section followed by `## <goal>` sections; we return base + the matching goal.
+const PRINCIPLES_URL = new URL('./coaching-principles.md', import.meta.url);
+function loadCoachingPrinciples(goal: string): string {
+  let raw: string;
+  try {
+    raw = readFileSync(PRINCIPLES_URL, 'utf8');
+  } catch (err) {
+    console.warn('[coach.llm] coaching-principles.md not loaded; generating without it:', err);
+    return '';
+  }
+  const base: string[] = [];
+  const sections = new Map<string, string[]>();
+  let current = base;
+  for (const line of raw.split('\n')) {
+    const header = /^##\s+(.+?)\s*$/.exec(line);
+    if (header) {
+      current = [];
+      sections.set(header[1]!.trim().toLowerCase(), current);
+    } else {
+      current.push(line);
+    }
+  }
+  const goalSection = sections.get(goal.trim().toLowerCase()) ?? [];
+  return [base.join('\n').trim(), goalSection.join('\n').trim()].filter(Boolean).join('\n\n');
+}
+
 function buildUserPrompt(input: GeneratePlanInput): string {
   const { readiness, goal, durationWeeks, daysPerWeek, availableExercises } = input;
 
@@ -140,9 +168,14 @@ function buildUserPrompt(input: GeneratePlanInput): string {
     );
   }
 
+  const principles = loadCoachingPrinciples(goal);
+
   return [
     `User request: goal="${goal}", durationWeeks=${durationWeeks}, daysPerWeek=${daysPerWeek}.`,
     '',
+    principles
+      ? `Coaching principles to apply (respect them where the ${daysPerWeek}-day schedule and "${goal}" goal allow):\n${principles}\n`
+      : '',
     'Readiness snapshot (pre-computed from real logs — ground truth, do not contradict):',
     JSON.stringify(readiness),
     '',
