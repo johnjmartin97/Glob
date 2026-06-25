@@ -15,6 +15,8 @@ export function errorHandler(
   }
 
   if (err instanceof HttpError) {
+    // Server-side failures (5xx) should leave a trace; client errors (4xx) stay quiet.
+    if (err.status >= 500) console.error(`[${err.status}] ${err.name}: ${err.message}`);
     res.status(err.status).json({ error: err.message });
     return;
   }

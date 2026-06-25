@@ -11,7 +11,9 @@ export const COACH_MODEL = env.LLM_MODEL;
 const client = new OpenAI({
   apiKey: env.LLM_API_KEY,
   baseURL: env.LLM_BASE_URL,
-  maxRetries: 4,
+  // Keep low: local servers don't rate-limit, and retries × the request timeout otherwise delay
+  // surfacing the real error. Our app-level loop handles validation retries.
+  maxRetries: 2,
   timeout: 180_000,
 });
 
@@ -70,7 +72,7 @@ const LlmWeekSchema = z.object({
 
 export const LlmPlanResponseSchema = z
   .object({
-    overallRationale: z.string().min(1).max(3000),
+    overallRationale: z.string().min(1).max(1200),
     weeks: z.array(LlmWeekSchema).min(1).max(16),
   })
   .superRefine((data, ctx) => {
@@ -163,9 +165,11 @@ function buildUserPrompt(input: GeneratePlanInput): string {
     `- weekIndex is the sequential position of the week: 0, 1, 2, ... up to ${durationWeeks - 1}, with no gaps or repeats.`,
     `- dayIndex is the sequential position of the session WITHIN its week: 0, 1, 2, ... up to ${daysPerWeek - 1}, with no gaps or repeats. This is the session's order, not a day-of-the-week label — do not skip numbers for rest days; rest days simply aren't represented.`,
     '- Each set\'s reps must be a whole number from 1 to 100. Prefer multiple sets over one set with an extreme rep count.',
+    '- Output WORKING SETS ONLY — do NOT include any warmup sets (isWarmup must be false for every set). The app adds warmups automatically. Keep set counts realistic (about 3-5 working sets per exercise, 3-5 exercises per session).',
+    '- Keep all text fields brief to stay within length limits: overallRationale at most 2 sentences; each week/session rationale at most 1 short sentence; notes null or a few words.',
     '- For the MAIN barbell lifts (categories squat, bench, deadlift): prescribe reps and targetRpe ONLY — the app computes the actual kg load from the lifter\'s estimated 1RM and your reps/RPE, so do NOT try to set loadKg/loadPct for them (any value you give is ignored). Drive the periodization for these lifts through reps and targetRpe (e.g. wave RPE up week to week, or lower reps as intensity rises).',
     '- For ACCESSORY/other working sets: give loadPct (percent of that exercise\'s working load, a number 0-100, e.g. 90 for 90%, NOT 0.9) or loadKg (0 or greater), plus targetRpe when you can.',
-    '- targetRpe is the prescribed effort (1-10) for each WORKING set, anchored on the RPE-progression guidance above (typically ~7-8 for moderate-rep work, up to ~9 near a peak). ALWAYS set targetRpe for every working set of the main barbell lifts; it is strongly preferred on accessory working sets too. Set targetRpe to null for warmup sets.',
+    '- targetRpe is the prescribed effort (1-10) for each set, anchored on the RPE-progression guidance above (typically ~7-8 for moderate-rep work, up to ~9 near a peak). ALWAYS set targetRpe for every set of the main barbell lifts; it is strongly preferred on accessory sets too.',
     '- Do NOT prescribe target velocities: the app derives each working set\'s target bar speed (m/s) itself.',
     '- setIndex within an exercise starts at 0 and increases by 1 per set, in the order the sets are performed.',
   ].join('\n');
@@ -208,7 +212,7 @@ async function requestPlanOnce(
     stream: true,
     // Cap completion so prompt + output fit the model's context window (Ollama: set OLLAMA_CONTEXT_LENGTH
     // large enough, e.g. 16384) and, on metered providers, stay under the per-minute token limit.
-    max_completion_tokens: 8000,
+    max_completion_tokens: 12000,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: buildUserPrompt(input) },
@@ -222,6 +226,53 @@ async function requestPlanOnce(
   return { text, finishReason };
 }
 
+// Logs the underlying request error in full and returns an accurate user-facing error. The whole
+// point: make the real cause (connection refused, timeout, Ollama 500 + body, 4xx, …) visible in the
+// server logs instead of collapsing everything to "overloaded".
+function mapAndLogLlmError(err: unknown, attempt: number): LlmResponseError {
+  const where = { baseURL: env.LLM_BASE_URL, model: COACH_MODEL, attempt };
+  if (err instanceof OpenAI.APIError) {
+    logLlmFailure('request error', {
+      ...where,
+      name: err.name,
+      status: err.status,
+      code: err.code,
+      type: err.type,
+      message: err.message,
+      body: err.error,
+    });
+    if (err instanceof OpenAI.APIConnectionTimeoutError) {
+      return new LlmResponseError(
+        'The coach model took too long to respond — it may be slow or still loading. Please try again.',
+      );
+    }
+    if (err instanceof OpenAI.APIConnectionError) {
+      return new LlmResponseError(
+        `Couldn't reach the coach model server at ${env.LLM_BASE_URL} — make sure it's running.`,
+      );
+    }
+    if (err.status === 429) {
+      return new LlmResponseError('The coach AI provider is rate-limiting — please try again in a minute.');
+    }
+    if (err.status != null && err.status >= 500) {
+      return new LlmResponseError(
+        `The coach model server returned an error (HTTP ${err.status}). Check the server logs for details.`,
+      );
+    }
+    if (err.status != null) {
+      return new LlmResponseError(`The coach request was rejected (HTTP ${err.status}): ${err.message}`);
+    }
+    return new LlmResponseError(`Coach's AI provider failed: ${err.message}`);
+  }
+  logLlmFailure('request error (non-API)', {
+    ...where,
+    message: err instanceof Error ? err.message : String(err),
+  });
+  return new LlmResponseError(
+    `Coach's AI provider failed: ${err instanceof Error ? err.message : String(err)}`,
+  );
+}
+
 export async function generateTrainingPlan(input: GeneratePlanInput): Promise<LlmPlanResponse> {
   for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
     let text = '';
@@ -229,17 +280,7 @@ export async function generateTrainingPlan(input: GeneratePlanInput): Promise<Ll
     try {
       ({ text, finishReason } = await requestPlanOnce(input));
     } catch (err) {
-      if (err instanceof OpenAI.APIError) {
-        const status = err.status;
-        if (status === 429 || status === 503 || (status != null && status >= 500)) {
-          throw new LlmResponseError(
-            "Coach's AI provider is temporarily overloaded — please try again in a minute.",
-          );
-        }
-      }
-      throw new LlmResponseError(
-        `Coach's AI provider failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw mapAndLogLlmError(err, attempt);
     }
 
     // Truncation won't fix itself on retry — fail fast with an actionable message.
@@ -273,7 +314,22 @@ export async function generateTrainingPlan(input: GeneratePlanInput): Promise<Ll
     }
 
     const result = LlmPlanResponseSchema.safeParse(parsedJson);
-    if (result.success) return result.data;
+    if (result.success) {
+      // Enforce the requested size — a small model often under-produces (e.g. 1 week when 4 were
+      // asked for). Such a plan is structurally valid but wrong, so retry instead of persisting it.
+      const weeksOk = result.data.weeks.length === input.durationWeeks;
+      const daysOk = result.data.weeks.every((w) => w.sessions.length === input.daysPerWeek);
+      if (weeksOk && daysOk) return result.data;
+      logLlmFailure('wrong plan size', {
+        wantWeeks: input.durationWeeks,
+        gotWeeks: result.data.weeks.length,
+        wantDays: input.daysPerWeek,
+        gotDays: result.data.weeks.map((w) => w.sessions.length),
+        attempt,
+      });
+      if (last) throw new LlmResponseError();
+      continue;
+    }
 
     logLlmFailure('schema validation', { issues: result.error.issues, text: snippet(text), attempt });
     if (last) throw new LlmResponseError();
