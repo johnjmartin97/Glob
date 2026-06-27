@@ -7,4 +7,3 @@ export * from './sessions';
 export * from './nutrition';
 export * from './supplements';
 export * from './sleep';
-export * from './coaching';

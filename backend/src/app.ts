@@ -10,7 +10,6 @@ import { sessionsRouter } from './modules/sessions/sessions.routes';
 import { nutritionRouter } from './modules/nutrition/nutrition.routes';
 import { supplementsRouter } from './modules/supplements/supplements.routes';
 import { sleepRouter } from './modules/sleep/sleep.routes';
-import { coachRouter } from './modules/coach/coach.routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -29,8 +28,6 @@ export function createApp() {
   api.use('/nutrition', nutritionRouter);
   api.use('/supplements', supplementsRouter);
   api.use('/sleep', sleepRouter);
-  api.use('/coach', coachRouter);
-
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);

@@ -99,6 +99,20 @@
       "when": 1782315788045,
       "tag": "0013_square_ser_duncan",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782400000000,
+      "tag": "0014_async_plan_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0015_drop_coaching",
+      "breakpoints": true
     }
   ]
 }

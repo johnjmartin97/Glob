@@ -16,7 +16,6 @@ import { requireAuth } from '../../middleware/requireAuth';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { NotFoundError } from '../../utils/errors';
 import { toSessionDto } from './sessions.dto';
-import { adaptPlanForCompletedSession } from '../coach/coach.adapt';
 
 export const sessionsRouter = Router();
 
@@ -279,16 +278,6 @@ sessionsRouter.patch(
         updatedAt: new Date(),
       })
       .where(eq(workoutSessions.id, session.id));
-
-    // When a workout that belongs to a coaching plan is freshly completed, let the coach
-    // autoregulate the plan's remaining sessions. Best-effort: never block the session save.
-    if (body.completedAt && !session.completedAt) {
-      try {
-        await adaptPlanForCompletedSession(session.id, req.userId);
-      } catch (err) {
-        console.error('[sessions] plan adaptation failed', err);
-      }
-    }
 
     res.json(await loadFullSession(session.id));
   }),
