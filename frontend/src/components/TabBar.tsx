@@ -1,11 +1,12 @@
+import { Apple, Bed, Dumbbell, Monitor, MoreHorizontal } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 const TABS = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/train', label: 'Train' },
-  { to: '/nutrition', label: 'Nutrition' },
-  { to: '/sleep', label: 'Sleep' },
-  { to: '/more', label: 'More' },
+  { to: '/', label: 'Dashboard', icon: Monitor, iconClassName: undefined },
+  { to: '/train', label: 'Train', icon: Dumbbell, iconClassName: 'rotate-45' },
+  { to: '/nutrition', label: 'Nutrition', icon: Apple, iconClassName: undefined },
+  { to: '/sleep', label: 'Sleep', icon: Bed, iconClassName: undefined },
+  { to: '/more', label: 'More', icon: MoreHorizontal, iconClassName: undefined },
 ];
 
 export function TabBar() {
@@ -23,6 +24,7 @@ export function TabBar() {
                 }`
               }
             >
+              <tab.icon size={22} className={tab.iconClassName} />
               {tab.label}
             </NavLink>
           </li>
